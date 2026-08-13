@@ -1,0 +1,186 @@
+==================
+Markdown body with paragraphs (SPEC 22)
+==================
+@note #pool observation : Pool ownership
+
+The current design ties `Document.Release()` to a single pool.
+
+Nested documents require independent ownership.
+
+- arrays need their own pools;
+- records may contain nested allocations;
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line)))
+
+==================
+Body whitespace preserved (SPEC 23)
+==================
+@note #x observation : a
+
+    indented
+      more indented
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line)))
+
+==================
+Escaped @note in body (SPEC 24)
+==================
+@note #x observation : a
+
+\@note is literal text.
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line)))
+
+==================
+Empty body (SPEC 25)
+==================
+@note #remove-api todo P1 : Remove deprecated API
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (title))
+    (separator_line)))
+
+==================
+Bare @note line is body text (SPEC 4.1)
+==================
+@note #x observation : a
+
+some text
+@note
+more text
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line)))
+
+==================
+@note in body begins a new note (SPEC 4.2)
+==================
+@note #a observation : first
+
+body of first note
+
+@note #b todo : second note
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))
+
+==================
+@note-heading-like body lines stay in the body (SPEC 4.1)
+==================
+@note #a observation : first
+
+@notebook
+@noteable
+@notex
+@note.
+@note
+see @note here
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line)))

@@ -1,0 +1,88 @@
+==================
+Multiple notes in one file (SPEC 4.2)
+==================
+@note #a observation : first
+
+@note #b todo P1 : second
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (title))
+    (separator_line)))
+
+==================
+Canonical full note (SPEC 49)
+==================
+@note #pool-ownership issue open P1 2026-08-10T16:29+03:00 #pooling,#memory : Nested documents can outlive their parent pool
+@author ai-code-reviewer-v2
+@see #document-lifecycle
+@see #allocator-ownership
+
+## Problem
+
+Nested documents currently share the parent's allocation pool.
+
+## Consequence
+
+Releasing the parent can invalidate allocations still referenced by
+nested documents.
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (header_field
+        (priority))
+      (header_field
+        (timestamp))
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)))
+      (title))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line)
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line)))

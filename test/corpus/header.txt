@@ -1,0 +1,382 @@
+==================
+Minimal note (SPEC 48)
+==================
+@note #x observation : Example
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))
+
+==================
+Full header, all core fields (SPEC 10/49)
+==================
+@note #pool-ownership issue open P1 2026-08-10T16:29+03:00 #pooling,#memory : Nested documents can outlive their parent pool
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (header_field
+        (priority))
+      (header_field
+        (timestamp))
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)))
+      (title))
+    (separator_line)))
+
+==================
+Equivalent metadata orderings (SPEC 10)
+==================
+@note #x issue P1 open 2026-08-10 #security,#input : Possible XSS
+
+@note #x issue open #security,#input P1 2026-08-10 : Possible XSS
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (header_field
+        (status))
+      (header_field
+        (timestamp))
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)))
+      (header_field
+        (priority))
+      (header_field
+        (timestamp))
+      (title))
+    (separator_line)))
+
+==================
+All core statuses (SPEC 11)
+==================
+@note #s1 issue open : a
+
+@note #s2 issue resolved : b
+
+@note #s3 issue wontfix : c
+
+@note #s4 issue deprecated : d
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (status))
+      (title))
+    (separator_line)))
+
+==================
+All core priorities (SPEC 12)
+==================
+@note #p0 issue P0 : a
+
+@note #p1 issue P1 : b
+
+@note #p2 issue P2 : c
+
+@note #p3 issue P3 : d
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (title))
+    (separator_line)))
+
+==================
+Timestamp variants (SPEC 13)
+==================
+@note #t1 issue 2026-08-10 : a
+
+@note #t2 issue 2026-08-10T16:29 : b
+
+@note #t3 issue 2026-08-10T16:29Z : c
+
+@note #t4 issue 2026-08-10T16:29+03:00 : d
+
+@note #t5 issue 2026-08-10T16:29:45Z : e
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (timestamp))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (timestamp))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (timestamp))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (timestamp))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (timestamp))
+      (title))
+    (separator_line)))
+
+==================
+Tags, canonical and whitespace-after-comma (SPEC 14)
+==================
+@note #x issue #pooling,#performance,#memory : a
+
+@note #y issue #pooling, #performance : b
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)
+          (tag_name)))
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)))
+      (title))
+    (separator_line)))
+
+==================
+Unknown header tokens become extension fields (SPEC 10/27)
+==================
+@note #x issue P5 #cache : Some title
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (extension_field))
+      (header_field
+        (tags
+          (tag_name)))
+      (title))
+    (separator_line)))
+
+==================
+Custom categories (SPEC 9.2)
+==================
+@note #x architecture : System design
+
+@note #y decision : Use append-only
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))
+
+==================
+Title with additional colons (SPEC 7/15)
+==================
+@note #x observation : Why A : B is necessary
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))
+
+==================
+Empty title yields MISSING title node (SPEC 15/31)
+==================
+@note #x observation : 
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title
+        (MISSING "title_token1")))
+    (separator_line)))
+
+==================
+Multi-space delimiter (ABNF WS ":" WS, SPEC 26)
+==================
+@note #x observation   :   spaced
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))
+
+==================
+Minimal one-line note without blank separator (SPEC 48)
+==================
+@note #x observation : Example
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))

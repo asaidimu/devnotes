@@ -1,0 +1,270 @@
+==================
+Author directive (SPEC 17)
+==================
+@note #x observation : a
+@author jane
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (separator_line)))
+
+==================
+Repeated authors (SPEC 17)
+==================
+@note #x observation : a
+@author jane
+@author bob
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (separator_line)))
+
+==================
+Author identifiers (SPEC 17)
+==================
+@note #x observation : a
+@author jane-doe
+@author ai-code-reviewer-v2
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (separator_line)))
+
+==================
+See directive with note ID (SPEC 18)
+==================
+@note #x observation : a
+@see #document-lifecycle
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (separator_line)))
+
+==================
+See directive with URL (SPEC 18)
+==================
+@note #x observation : a
+@see https://github.com/example/project/issues/42
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (see_directive
+        (reference
+          (url))))
+    (separator_line)))
+
+==================
+Multiple references (SPEC 18/47.5)
+==================
+@note #storage-design decision #storage,#architecture : Use append-only records
+@author architecture-team
+@see #storage-recovery
+@see #storage-compaction
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (tags
+          (tag_name)
+          (tag_name)))
+      (title))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (separator_line)))
+
+==================
+Unknown directives preserved (SPEC 19/47.6)
+==================
+@note #cache-risk issue P1 #cache : Cache invalidation race
+@author jane
+@component cache
+@deadline 2026-12-31
+@assign backend
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (header_field
+        (priority))
+      (header_field
+        (tags
+          (tag_name)))
+      (title))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (extension_directive
+        (directive_name)
+        (directive_value)))
+    (directive_line
+      (extension_directive
+        (directive_name)
+        (directive_value)))
+    (directive_line
+      (extension_directive
+        (directive_name)
+        (directive_value)))
+    (separator_line)))
+
+==================
+Extension directive without value (SPEC 26)
+==================
+@note #x observation : a
+@assign
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (extension_directive
+        (directive_name)))
+    (separator_line)))
+
+==================
+Extension directive names may start with digits (SPEC 26)
+==================
+@note #x observation : a
+@1st-try some value
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (extension_directive
+        (directive_name)
+        (directive_value)))
+    (separator_line)))
+
+==================
+Directives in any order (SPEC 20)
+==================
+@note #x observation : a
+@see #api
+@author jane
+@deadline 2026-12-31
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (extension_directive
+        (directive_name)
+        (directive_value)))
+    (separator_line)))
+
+==================
+No directives (SPEC 48)
+==================
+@note #x observation : Example
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (separator_line)))

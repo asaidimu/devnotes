@@ -1,0 +1,40 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "devnotes",
+      "camelcase": "Devnotes",
+      "scope": "source.devnotes",
+      "path": ".",
+      "file-types": [
+        "dn",
+        "devnotes"
+      ],
+      "highlights": "queries/highlights.scm",
+      "injection-regex": "devnotes"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "tree-sitter grammar for the DevNotes meta-language",
+    "authors": [
+      {
+        "name": "devnotes"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/example/devnotes"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "java": false,
+    "node": true,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

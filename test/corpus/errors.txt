@@ -1,0 +1,44 @@
+==================
+Malformed note recovers; subsequent notes parse (SPEC 32)
+==================
+@note broken ...
+@note #b observation : B
+
+body of b
+
+
+---
+(source_file
+  (note_block
+    (header_line
+      (ERROR
+        (UNEXPECTED '.'))
+      (id)
+      (category)
+      (title))
+    (separator_line)
+    (body_line
+      (body_text))
+    (body_line)))
+
+==================
+Malformed header line (missing delimiter)
+==================
+@note #x observation
+@note #y todo : valid
+
+
+---
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (ERROR)
+      (header_field
+        (tags
+          (tag_name)))
+      (header_field
+        (extension_field))
+      (title))
+    (separator_line)))

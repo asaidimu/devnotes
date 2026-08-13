@@ -1,0 +1,31 @@
+{
+  "name": "devnotes",
+  "version": "0.1.0",
+  "description": "tree-sitter grammar for the DevNotes meta-language",
+  "license": "MIT",
+  "type": "module",
+  "main": "bindings/node/index.js",
+  "types": "bindings/node/index.d.ts",
+  "gypfile": true,
+  "files": [
+    "grammar.js",
+    "bindings",
+    "src",
+    "test"
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "build": "tree-sitter build",
+    "build:wasm": "tree-sitter build --wasm",
+    "test": "tree-sitter test && node test/basic.test.mjs"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.0.0",
+    "node-gyp-build": "^4.8.0",
+    "tree-sitter": "^0.25.1"
+  },
+  "devDependencies": {
+    "node-gyp": "^12.4.0",
+    "tree-sitter-cli": "^0.26.9"
+  }
+}
