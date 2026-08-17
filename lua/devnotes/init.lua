@@ -66,8 +66,8 @@ function M.setup(user)
     end,
   })
 
-  vim.api.nvim_create_user_command('DevnotesF3', function(e)
-    f3.highlight_buf(e.buf)
+  vim.api.nvim_create_user_command('DevnotesF3', function()
+    f3.highlight_buf(vim.api.nvim_get_current_buf())
   end, {})
 
   return M
