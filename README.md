@@ -7,7 +7,7 @@ This is a monorepo. The repo root is simultaneously:
 
 - a **tree-sitter grammar** (`grammar.js`, `src/`, `queries/`)
 - a **Neovim plugin** (`lua/`, `plugin/`, `ftdetect/`)
-- a **Go workspace** (`go.work` → `engine/`, `bindings/go/`)
+- a **Go module** (`go.mod`; packages under `engine/` and `bindings/go/`)
 
 ## Install
 
@@ -65,30 +65,29 @@ vim.lsp.enable('devnotes')
 ```
 grammar.js / src/ / queries/   tree-sitter grammar + highlight queries
 lua/ plugin/ ftdetect/         Neovim integration (F3 in-comment highlighting)
-bindings/go/                   Go binding module (subdirectory module of this repo)
+bindings/go/                   Go binding for the devnotes grammar
 engine/                        Go engine: normalize, model, validate, pipeline,
                                cst, host adapters, CLI, LSP server
-go.work                        local Go workspace (engine + bindings/go)
+go.mod                         single Go module (all engine + binding packages)
 ```
 
 ### Local Go development
 
-The workspace ties `engine/` and `bindings/go/` together locally:
+Everything lives in one module at the repo root:
 
 ```sh
-go build ./engine/...
-cd engine && go test ./...
+go build ./...
+go test ./engine/...
 ```
 
-`engine/go.mod` carries a `replace` pointing at `../bindings/go` for local
-builds; downstream consumers ignore it and resolve the tagged subdirectory
-module `github.com/asaidimu/devnotes/bindings/go`.
+`bindings/go` is a plain package of this module, so no workspace or `replace`
+directive is needed; consumers resolve the whole module via the `v0.1.0` tag.
 
 ## Tests
 
 ```sh
 npm test                 # grammar corpus + basic node tests
-cd engine && go test ./...
+go test ./engine/...
 ```
 
 ## Spec

@@ -40,7 +40,6 @@ jobs:
           go-version: '1.23'
 
       - name: Build and test Go engine
-        working-directory: engine
         run: |
           go build ./...
           go vet ./...
