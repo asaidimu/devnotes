@@ -148,7 +148,7 @@ end
 -- Highlighting
 -- ---------------------------------------------------------------------------
 
-local lua_root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h:h:h')
+local lua_root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h:h')
 
 local function devnotes_query()
   local ok, query = pcall(vim.treesitter.query.get, 'devnotes', 'highlights')

@@ -1,3 +1,3 @@
-module github.com/asaidimu/tree-sitter-devnotes/bindings/go
+module github.com/asaidimu/devnotes/bindings/go
 
 go 1.22

@@ -3,7 +3,7 @@ package cst
 
 import (
 	sitter "github.com/tree-sitter/go-tree-sitter"
-	devnotes "github.com/asaidimu/tree-sitter-devnotes/bindings/go"
+	devnotes "github.com/asaidimu/devnotes/bindings/go"
 )
 
 // Parse parses normalized DevNotes content and returns the tree.

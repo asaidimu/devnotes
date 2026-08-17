@@ -10,12 +10,12 @@
 local M = {}
 
 -- Repo root derived from this file's own path:
---   <repo>/nvim/lua/devnotes/init.lua  ->  <repo>
+--   <repo>/lua/devnotes/init.lua  ->  <repo>
 local function default_path()
   local src = debug.getinfo(1, 'S').source or '?'
   local p = src:sub(1, 1) == '@' and src:sub(2) or src
   p = vim.fn.fnamemodify(p, ':p')
-  return vim.fn.fnamemodify(p, ':h:h:h:h')
+  return vim.fn.fnamemodify(p, ':h:h:h')
 end
 
 local opts = { path = default_path() }
@@ -47,7 +47,7 @@ function M.setup(user)
     pattern = 'TSUpdate',
     callback = function()
       require('nvim-treesitter.parsers')['devnotes'] = {
-        install_info = { path = opts.path },
+        install_info = { path = opts.path, queries = 'queries' },
       }
     end,
   })
