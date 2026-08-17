@@ -74,8 +74,12 @@ IDs are a tooling concern (unique + stable), titles are for humans — so the
 
 ### Snippets
 
-The plugin registers LuaSnip snippets for the `devnotes` filetype when LuaSnip
-is available (disable with `require('devnotes').setup({ load_snippets = false })`):
+The plugin registers LuaSnip snippets when LuaSnip is available (disable with
+`require('devnotes').setup({ load_snippets = false })`). The same snippets load
+for the `devnotes` filetype **and** for the host filetypes — `go`,
+`typescript`, `typescriptreact`, `javascript`, `javascriptreact` — so you can
+write notes directly inside Go/TS/JS comments without ever opening a `.dn`
+file:
 
 - `note` — `@note #<uid> observation : title` (UID auto-generated, editable)
 - `note-observation` / `note-todo` / `note-issue` / `note-context` / `note-lesson` / `note-prompt` — same header with the category preset
@@ -87,8 +91,10 @@ is available (disable with `require('devnotes').setup({ load_snippets = false })
 
 ```
 grammar.js / src/ / queries/   tree-sitter grammar + highlight queries
-lua/ plugin/ ftdetect/         Neovim integration (F3 in-comment highlighting)
-snippets/                      LuaSnip snippets for the devnotes filetype
+lua/ plugin/ ftdetect/         Neovim integration (F3 in-comment highlighting,
+                               shared snippet definitions in lua/devnotes/)
+snippets/                      per-filetype LuaSnip wrappers (devnotes + host
+                               filetypes: go, typescript, javascript, ...)
 bindings/go/                   Go binding for the devnotes grammar
 engine/                        Go engine: normalize, model, validate, pipeline,
                                cst, host adapters, CLI, LSP server
