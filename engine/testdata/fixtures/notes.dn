@@ -1,0 +1,18 @@
+@note #dn-valid observation : A valid standalone note
+@author ada
+
+Inner body line.
+  Indented body line.
+
+@note #dn-dup observation : First of a duplicated pair
+
+Note text.
+
+@note #dn-dup todo : Second of the duplicated pair
+
+Note text.
+
+@note #dn-noref issue : References something that does not exist
+@see #ghost-ref
+
+Note text.

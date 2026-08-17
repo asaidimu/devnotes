@@ -3,8 +3,8 @@
 Markers: `[ ]` todo, `[-]` in progress, `[*]` done
 
 ## A. Publish
-- [ ] Initial git commit
-- [ ] Add GitHub remote and push
+- [*] Initial git commit
+- [*] Add GitHub remote and push
 
 ## B. nvim parser baseline (pure grammar)
 - [ ] Verify query layout expected by the new neovim-treesitter registry

@@ -33,3 +33,15 @@ jobs:
 
       - name: Check highlight captures conform to standards
         run: bunx tree-sitter highlight --check --query-paths queries/highlights.scm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build and test Go engine
+        working-directory: engine
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...

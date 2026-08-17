@@ -29,7 +29,7 @@
   },
   "bindings": {
     "c": true,
-    "go": false,
+    "go": true,
     "java": false,
     "node": true,
     "python": false,
