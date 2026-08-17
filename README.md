@@ -60,16 +60,25 @@ vim.lsp.enable('devnotes')
 
 `devnotes-lsp` speaks JSON-RPC on stdio (`initialize`, `textDocument/didOpen`,
 `textDocument/didChange`) and publishes diagnostics via `publishDiagnostics`.
-It also serves context-aware completions (directives, categories, statuses,
-priorities) through `textDocument/completion`.
+It also serves context-aware completions through `textDocument/completion`:
+
+- inside an `@note` header: categories, statuses, priorities, directives, and
+  existing note IDs (right after `#`) for reuse;
+- after `@see #` or a bare `#`: every note ID defined in the workspace (a
+  per-file scan indexes IDs on open/change/save), annotated with the file and
+  line where the note lives — no need to keep IDs in your head;
+- after the title colon (`:`): nothing (the title is free text).
+
+IDs are a tooling concern (unique + stable), titles are for humans — so the
+`note` snippets auto-generate a short random UID for the `#id` slot.
 
 ### Snippets
 
 The plugin registers LuaSnip snippets for the `devnotes` filetype when LuaSnip
 is available (disable with `require('devnotes').setup({ load_snippets = false })`):
 
-- `note` — `@note #id observation : title`
-- `note-observation` / `note-todo` / `note-issue` / `note-context` / `note-lesson` / `note-prompt`
+- `note` — `@note #<uid> observation : title` (UID auto-generated, editable)
+- `note-observation` / `note-todo` / `note-issue` / `note-context` / `note-lesson` / `note-prompt` — same header with the category preset
 - `author` — `@author name`
 - `see` — `@see #id`
 - `note-full` — complete note with directives and body

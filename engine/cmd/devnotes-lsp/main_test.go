@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -153,5 +154,93 @@ func TestURIHelpers(t *testing.T) {
 	}
 	if got := uriToPath("untitled:foo"); got != "untitled:foo" {
 		t.Fatalf("uriToPath non-file = %q", got)
+	}
+}
+
+// completionLabels runs a completion request and returns the result labels.
+func completionLabels(t *testing.T, s *server, uri string, line, char uint) []string {
+	t.Helper()
+	frames := feed(t, s,
+		map[string]any{"jsonrpc": "2.0", "id": 1, "method": "textDocument/completion", "params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"position":     map[string]any{"line": line, "character": char},
+		}},
+	)
+	var resp struct {
+		Result struct {
+			Items []struct {
+				Label string `json:"label"`
+			} `json:"items"`
+		} `json:"result"`
+	}
+	for _, f := range frames {
+		if json.Unmarshal(f, &resp) == nil && len(resp.Result.Items) > 0 {
+			break
+		}
+	}
+	labels := make([]string, 0, len(resp.Result.Items))
+	for _, it := range resp.Result.Items {
+		labels = append(labels, it.Label)
+	}
+	return labels
+}
+
+func TestCompletionHeaderFields(t *testing.T) {
+	s := &server{docs: map[string]*doc{}, idx: map[string][]noteRef{}, idxStale: false}
+	uri := "file:///tmp/c.dn"
+	s.docs[uri] = &doc{path: "/tmp/c.dn", text: []byte("@note observation : T\n")}
+	got := completionLabels(t, s, uri, 0, 6)
+	want := map[string]bool{}
+	for _, c := range append(append([]string{"observation", "todo", "issue", "context", "lesson", "prompt"}, "open", "resolved", "wontfix", "deprecated"), "P0", "P1", "P2", "P3") {
+		want[c] = true
+	}
+	seen := map[string]bool{}
+	for _, l := range got {
+		seen[l] = true
+	}
+	for c := range want {
+		if !seen[c] {
+			t.Fatalf("missing completion %q in %v", c, got)
+		}
+	}
+}
+
+func TestCompletionSeeReferencesWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	writeFile(t, ws+"/a.go", "package a\n\n// @note #alpha observation : Alpha\nfunc A() {}\n\n// @note #beta todo P1 : Beta\nfunc B() {}\n")
+	writeFile(t, ws+"/b.dn", "@note #gamma lesson : Gamma\n")
+	s := &server{docs: map[string]*doc{}, idxStale: true}
+	s.root = ws
+	uri := "file:///tmp/see.dn"
+	s.docs[uri] = &doc{path: "/tmp/see.dn", text: []byte("@see #al\n")}
+
+	// Index must pick up alpha/beta/gamma from the workspace before completion.
+	if len(s.ensureIndex()) != 3 {
+		t.Fatalf("expected 3 indexed IDs, got %d: %v", len(s.ensureIndex()), s.idx)
+	}
+	got := completionLabels(t, s, uri, 0, 8)
+	if len(got) != 1 || got[0] != "#alpha" {
+		t.Fatalf("@see #al -> %v, want [\"#alpha\"]", got)
+	}
+}
+
+func TestCompletionNoteHeaderOffersExistingIDs(t *testing.T) {
+	ws := t.TempDir()
+	writeFile(t, ws+"/a.go", "package a\n\n// @note #alpha observation : Alpha\nfunc A() {}\n")
+	s := &server{docs: map[string]*doc{}, idxStale: true}
+	s.root = ws
+	uri := "file:///tmp/h.dn"
+	s.docs[uri] = &doc{path: "/tmp/h.dn", text: []byte("@note #\n")}
+
+	got := completionLabels(t, s, uri, 0, 7)
+	if len(got) != 1 || got[0] != "#alpha" {
+		t.Fatalf("@note # -> %v, want [\"#alpha\"]", got)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

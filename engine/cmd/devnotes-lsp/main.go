@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,6 +29,15 @@ type doc struct {
 
 type server struct {
 	docs map[string]*doc // keyed by LSP URI
+	root string          // workspace root (from initialize rootUri)
+	// note index: id -> locations, populated lazily by scanning the root.
+	idx      map[string][]noteRef
+	idxStale bool
+}
+
+type noteRef struct {
+	File string
+	Line uint
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +109,13 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 
 	switch req.Method {
 	case "initialize":
+		var p struct {
+			RootURI string `json:"rootUri"`
+		}
+		json.Unmarshal(req.Params, &p)
+		if p.RootURI != "" {
+			s.root = uriToPath(p.RootURI)
+		}
 		respond(map[string]interface{}{
 			"capabilities": map[string]interface{}{
 				"textDocumentSync": 1, // full sync
@@ -124,6 +141,7 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 		}
 		json.Unmarshal(req.Params, &p)
 		s.docs[p.TextDocument.URI] = &doc{path: uriToPath(p.TextDocument.URI), text: []byte(p.TextDocument.Text)}
+		s.idxStale = true
 		s.checkAll(w)
 	case "textDocument/didChange":
 		var p struct {
@@ -137,6 +155,7 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 		json.Unmarshal(req.Params, &p)
 		if d, ok := s.docs[p.TextDocument.URI]; ok && len(p.ContentChanges) > 0 {
 			d.text = []byte(p.ContentChanges[len(p.ContentChanges)-1].Text)
+			s.idxStale = true
 			s.checkAll(w)
 		}
 	case "textDocument/didSave":
@@ -150,6 +169,7 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 			if src, err := os.ReadFile(d.path); err == nil {
 				d.text = src
 			}
+			s.idxStale = true
 			s.checkAll(w)
 		}
 	case "textDocument/didClose":
@@ -228,6 +248,23 @@ func completionItems(s *server, uri string, line, col uint) []map[string]interfa
 		if strings.Contains(p, ":") {
 			return items
 		}
+		// Right after "@note #" or "#partial": offer known IDs to reuse.
+		if hashIdx := strings.Index(p, "#"); hashIdx >= 0 {
+			partial := strings.TrimPrefix(p[hashIdx+1:], "#")
+			refs := s.ensureIndex()
+			for id, locs := range refs {
+				short := strings.TrimPrefix(id, "#")
+				if partial != "" && !strings.HasPrefix(short, partial) {
+					continue
+				}
+				detail := "existing note"
+				if len(locs) > 0 {
+					detail = fmt.Sprintf("%s:%d", filepath.Base(locs[0].File), locs[0].Line+1)
+				}
+				add("#"+short, 6, detail, short)
+			}
+			return items
+		}
 		// Directives only when at the start of a directive line.
 		if !strings.Contains(lower, "@author") && !strings.Contains(lower, "@see") {
 			add("@author", 14, "directive", "@author ")
@@ -244,6 +281,48 @@ func completionItems(s *server, uri string, line, col uint) []map[string]interfa
 		// Priorities.
 		for _, pr := range corePrioritiesList {
 			add(pr, 12, "priority", pr)
+		}
+		return items
+	}
+
+	// "@see #..." or "@see #partial": complete known note IDs from the
+	// workspace index.
+	if strings.HasPrefix(p, "@see") {
+		hashIdx := strings.Index(p, "#")
+		if hashIdx >= 0 {
+			partial := strings.TrimPrefix(p[hashIdx+1:], "#")
+			refs := s.ensureIndex()
+			for id, locs := range refs {
+				short := strings.TrimPrefix(id, "#")
+				if partial != "" && !strings.HasPrefix(short, partial) {
+					continue
+				}
+				detail := "note"
+				if len(locs) > 0 {
+					detail = fmt.Sprintf("%s:%d", filepath.Base(locs[0].File), locs[0].Line+1)
+				}
+add("#"+short, 6, detail, short)
+			}
+			return items
+		}
+		add("@see", 14, "directive", "@see ")
+		return items
+	}
+
+	// Bare "#" prefix on a directive-looking line: offer known note IDs.
+	if strings.HasPrefix(p, "#") {
+		partial := strings.TrimPrefix(p[1:], "#")
+		refs := s.ensureIndex()
+		for id, locs := range refs {
+			short := strings.TrimPrefix(id, "#")
+			if partial != "" && !strings.HasPrefix(short, partial) {
+				continue
+			}
+			detail := "note"
+			if len(locs) > 0 {
+				detail = fmt.Sprintf("%s:%d", filepath.Base(locs[0].File), locs[0].Line+1)
+			}
+			add(id, 6, detail, short)
 		}
 		return items
 	}
@@ -269,6 +348,68 @@ func completionItems(s *server, uri string, line, col uint) []map[string]interfa
 var coreCategoriesList = []string{"observation", "todo", "issue", "context", "lesson", "prompt"}
 var coreStatusesList = []string{"open", "resolved", "wontfix", "deprecated"}
 var corePrioritiesList = []string{"P0", "P1", "P2", "P3"}
+
+// ensureIndex populates s.idx from the workspace root on first use, or after
+// any document changed. Returns the current index.
+func (s *server) ensureIndex() map[string][]noteRef {
+	if s.idx == nil || s.idxStale {
+		s.scanWorkspace()
+	}
+	return s.idx
+}
+
+// scanWorkspace walks the root (or the directory of the first open doc) and
+// collects every note ID defined in supported files. Non-devnotes files are
+// skipped; directories named like vendoring/output dirs are pruned.
+func (s *server) scanWorkspace() {
+	idx := map[string][]noteRef{}
+	root := s.root
+	if root == "" {
+		for _, d := range s.docs {
+			if d.path != "" {
+				root = filepath.Dir(d.path)
+				break
+			}
+		}
+	}
+	if root == "" {
+		s.idx = idx
+		s.idxStale = false
+		return
+	}
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "dist" || name == "build") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if pipeline.Lang(filepath.Ext(path)) == "" {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		res, err := pipeline.CheckFile(path, filepath.Ext(path), src)
+		if err != nil {
+			return nil
+		}
+		for _, loc := range res.NoteLocs {
+			id := loc.Note.ID
+			if id != "" {
+				idx[id] = append(idx[id], noteRef{File: loc.File, Line: loc.Note.Range.StartLine})
+			}
+		}
+		return nil
+	})
+	s.idx = idx
+	s.idxStale = false
+}
 
 // nthLine returns the (0-indexed) line of b as a string, excluding its newline.
 func nthLine(b []byte, line int) string {
