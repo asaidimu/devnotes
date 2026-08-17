@@ -102,6 +102,9 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 		respond(map[string]interface{}{
 			"capabilities": map[string]interface{}{
 				"textDocumentSync": 1, // full sync
+				"completionProvider": map[string]interface{}{
+					"triggerCharacters": []string{"@", "#"},
+				},
 			},
 			"serverInfo": map[string]interface{}{
 				"name":    serverName,
@@ -160,7 +163,142 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 			delete(s.docs, p.TextDocument.URI)
 			s.checkAll(w)
 		}
+	case "textDocument/completion":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      uint `json:"line"`
+				Character uint `json:"character"`
+			} `json:"position"`
+		}
+		json.Unmarshal(req.Params, &p)
+		items := completionItems(s, p.TextDocument.URI, p.Position.Line, p.Position.Character)
+		respond(map[string]interface{}{
+			"isIncomplete": false,
+			"items":        items,
+		})
 	}
+}
+
+// completionItems returns DevNotes completions for the current line context.
+func completionItems(s *server, uri string, line, col uint) []map[string]interface{} {
+	var d *doc
+	if dd, ok := s.docs[uri]; ok {
+		d = dd
+	}
+	prefix := ""
+	if d != nil {
+		lineText := nthLine(d.text, int(line))
+		ci := int(col)
+		if ci > len(lineText) {
+			ci = len(lineText)
+		}
+		prefix = string(lineText[:ci])
+	}
+
+	// Strip host-language comment prefixes so header completions work in
+	// Go/TS comments too (e.g. "// @note #id obs...").
+	p := strings.TrimSpace(prefix)
+	p = strings.TrimPrefix(p, "//")
+	p = strings.TrimPrefix(p, "/*")
+	p = strings.TrimPrefix(p, "*")
+	p = strings.TrimPrefix(p, "//")
+	p = strings.TrimSpace(p)
+
+	items := []map[string]interface{}{}
+	lower := strings.ToLower(p)
+
+	add := func(label string, kind int, detail, insert string) {
+		item := map[string]interface{}{"label": label, "kind": kind}
+		if detail != "" {
+			item["detail"] = detail
+		}
+		if insert != "" {
+			item["insertText"] = insert
+			item["insertTextFormat"] = 2 // plain text
+		}
+		items = append(items, item)
+	}
+
+	// Inside "@note ..." header: category/field context.
+	if strings.Contains(lower, "@note") {
+		// After ':' we're in the title; nothing to complete.
+		if strings.Contains(p, ":") {
+			return items
+		}
+		// Directives only when at the start of a directive line.
+		if !strings.Contains(lower, "@author") && !strings.Contains(lower, "@see") {
+			add("@author", 14, "directive", "@author ")
+			add("@see", 14, "directive", "@see ")
+		}
+		// Categories.
+		for _, c := range coreCategoriesList {
+			add(c, 12, "category", c)
+		}
+		// Statuses.
+		for _, st := range coreStatusesList {
+			add(st, 12, "status", st)
+		}
+		// Priorities.
+		for _, pr := range corePrioritiesList {
+			add(pr, 12, "priority", pr)
+		}
+		return items
+	}
+
+	// Directive lines (@author/@see/extension).
+	if strings.HasPrefix(p, "@") {
+		add("@note", 14, "note header", "@note #id category : title")
+		add("@author", 14, "directive", "@author ")
+		add("@see", 14, "directive", "@see ")
+		return items
+	}
+
+	// Blank / other line: offer a full note header + directives.
+	add("@note", 14, "note header", "@note #id category : title")
+	add("@author", 14, "directive", "@author ")
+	add("@see", 14, "directive", "@see ")
+	for _, c := range coreCategoriesList {
+		add(c, 12, "category", c)
+	}
+	return items
+}
+
+var coreCategoriesList = []string{"observation", "todo", "issue", "context", "lesson", "prompt"}
+var coreStatusesList = []string{"open", "resolved", "wontfix", "deprecated"}
+var corePrioritiesList = []string{"P0", "P1", "P2", "P3"}
+
+// nthLine returns the (0-indexed) line of b as a string, excluding its newline.
+func nthLine(b []byte, line int) string {
+	if line < 0 {
+		return ""
+	}
+	start := 0
+	cur := 0
+	for start < len(b) && cur < line {
+		nl := indexByte(b[start:], '\n')
+		if nl < 0 {
+			return ""
+		}
+		start += nl + 1
+		cur++
+	}
+	end := indexByte(b[start:], '\n')
+	if end < 0 {
+		end = len(b) - start
+	}
+	return string(b[start : start+end])
+}
+
+func indexByte(b []byte, c byte) int {
+	for i, x := range b {
+		if x == c {
+			return i
+		}
+	}
+	return -1
 }
 
 // checkAll re-checks every open doc, then publishes diagnostics for all of

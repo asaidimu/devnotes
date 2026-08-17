@@ -18,7 +18,7 @@ local function default_path()
   return vim.fn.fnamemodify(p, ':h:h:h')
 end
 
-local opts = { path = default_path() }
+local opts = { path = default_path(), load_snippets = true }
 
 local HOST_FILETYPES = {
   go = true,
@@ -69,6 +69,14 @@ function M.setup(user)
   vim.api.nvim_create_user_command('DevnotesF3', function()
     f3.highlight_buf(vim.api.nvim_get_current_buf())
   end, {})
+
+  -- 4. LuaSnip snippets for the devnotes filetype.
+  if opts.load_snippets then
+    pcall(function()
+      local loader = require('luasnip.loaders.from_lua')
+      loader.lazy_load({ paths = { opts.path .. '/snippets' } })
+    end)
+  end
 
   return M
 end

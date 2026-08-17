@@ -203,7 +203,7 @@ local function paint(bufnr, ns_id, region)
       if nr < nbuffer and ner <= nbuffer then
         vim.api.nvim_buf_set_extmark(bufnr, ns_id,
           nr + rowoff, shift[nr + 1] + nc,
-          { end_row = ner + rowoff, end_col = shift[ner + 1] + nec, hl_group = group })
+          { end_row = ner + rowoff, end_col = shift[ner + 1] + nec, hl_group = group, priority = 200 })
       end
     end
   end

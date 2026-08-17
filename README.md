@@ -52,19 +52,34 @@ Wire it into nvim (nvim 0.11+ lspconfig):
 ```lua
 vim.lsp.config('devnotes', {
   cmd = { 'devnotes-lsp' },
-  filetypes = { 'devnotes' },
+  filetypes = { 'devnotes', 'go', 'typescript', 'typescriptreact', 'javascript', 'javascriptreact' },
+  root_markers = {},
 })
 vim.lsp.enable('devnotes')
 ```
 
 `devnotes-lsp` speaks JSON-RPC on stdio (`initialize`, `textDocument/didOpen`,
 `textDocument/didChange`) and publishes diagnostics via `publishDiagnostics`.
+It also serves context-aware completions (directives, categories, statuses,
+priorities) through `textDocument/completion`.
+
+### Snippets
+
+The plugin registers LuaSnip snippets for the `devnotes` filetype when LuaSnip
+is available (disable with `require('devnotes').setup({ load_snippets = false })`):
+
+- `note` — `@note #id observation : title`
+- `note-observation` / `note-todo` / `note-issue` / `note-context` / `note-lesson` / `note-prompt`
+- `author` — `@author name`
+- `see` — `@see #id`
+- `note-full` — complete note with directives and body
 
 ## Layout
 
 ```
 grammar.js / src/ / queries/   tree-sitter grammar + highlight queries
 lua/ plugin/ ftdetect/         Neovim integration (F3 in-comment highlighting)
+snippets/                      LuaSnip snippets for the devnotes filetype
 bindings/go/                   Go binding for the devnotes grammar
 engine/                        Go engine: normalize, model, validate, pipeline,
                                cst, host adapters, CLI, LSP server
