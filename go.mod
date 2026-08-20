@@ -2,6 +2,13 @@ module github.com/asaidimu/devnotes
 
 go 1.23
 
-require github.com/tree-sitter/go-tree-sitter v0.25.0
+require (
+	github.com/spf13/cobra v1.9.1
+	github.com/tree-sitter/go-tree-sitter v0.24.1-0.20251112183152-c9492002f76e
+)
 
-require github.com/mattn/go-pointer v0.0.1 // indirect
+require (
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
+)
