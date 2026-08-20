@@ -112,5 +112,6 @@ clean:
 
 test:
 	$(TS) test
+	go test ./...
 
 .PHONY: all install uninstall clean test

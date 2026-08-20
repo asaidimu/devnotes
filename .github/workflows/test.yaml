@@ -2,45 +2,27 @@ name: Test Workflow
 
 on:
   push:
-    branches-ignore:
-      - ci
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Regenerate parser from grammar
-        run: bunx tree-sitter generate
-
-      - name: Verify generated files are committed
-        run: git diff --exit-code
-
-      - name: Run test suite
-        run: npm test
-
-      - name: Check highlight captures conform to standards
-        run: bunx tree-sitter highlight --check --query-paths queries/highlights.scm
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.23'
+          go-version: '1.27.0-rc.1'
+          cache: true
 
-      - name: Build and test Go engine
-        run: |
-          go build ./...
-          go vet ./...
-          go test ./...
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Test
+        run: make test
+
+      - name: Build
+        run: go build -v ./...

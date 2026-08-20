@@ -36,8 +36,11 @@ type server struct {
 }
 
 type noteRef struct {
-	File string
-	Line uint
+	File     string
+	Line     uint
+	Title    string
+	Category string
+	Status   string
 }
 
 // ---------------------------------------------------------------------------
@@ -402,7 +405,13 @@ func (s *server) scanWorkspace() {
 		for _, loc := range res.NoteLocs {
 			id := loc.Note.ID
 			if id != "" {
-				idx[id] = append(idx[id], noteRef{File: loc.File, Line: loc.Note.Range.StartLine})
+				idx[id] = append(idx[id], noteRef{
+					File:     loc.File,
+					Line:     loc.Note.Range.StartLine,
+					Title:    loc.Note.Title,
+					Category: loc.Note.Category,
+					Status:   loc.Note.Status,
+				})
 			}
 		}
 		return nil
