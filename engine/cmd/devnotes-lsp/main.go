@@ -245,6 +245,38 @@ func completionItems(s *server, uri string, line, col uint) []map[string]interfa
 		items = append(items, item)
 	}
 
+	addRef := func(label, insert string, r noteRef) {
+		item := map[string]interface{}{
+			"label":           label,
+			"kind":            6, // reference
+			"insertText":      insert,
+			"insertTextFormat": 2,
+		}
+		title := strings.TrimSpace(r.Title)
+		if title != "" {
+			item["detail"] = title
+		} else {
+			item["detail"] = "untitled"
+		}
+		parts := []string{}
+		if r.Category != "" {
+			parts = append(parts, r.Category)
+		}
+		if r.Status != "" {
+			parts = append(parts, r.Status)
+		}
+		if r.File != "" {
+			parts = append(parts, filepath.Base(r.File))
+		}
+		if len(parts) > 0 {
+			item["documentation"] = map[string]interface{}{
+				"kind":  "markdown",
+				"value": strings.Join(parts, " · "),
+			}
+		}
+		items = append(items, item)
+	}
+
 	// Inside "@note ..." header: category/field context.
 	if strings.Contains(lower, "@note") {
 		// After ':' we're in the title; nothing to complete.
@@ -260,11 +292,11 @@ func completionItems(s *server, uri string, line, col uint) []map[string]interfa
 				if partial != "" && !strings.HasPrefix(short, partial) {
 					continue
 				}
-				detail := "existing note"
 				if len(locs) > 0 {
-					detail = fmt.Sprintf("%s:%d", filepath.Base(locs[0].File), locs[0].Line+1)
+					addRef("#"+short, short, locs[0])
+				} else {
+					add("#"+short, 6, "existing note", short)
 				}
-				add("#"+short, 6, detail, short)
 			}
 			return items
 		}
@@ -300,11 +332,11 @@ func completionItems(s *server, uri string, line, col uint) []map[string]interfa
 				if partial != "" && !strings.HasPrefix(short, partial) {
 					continue
 				}
-				detail := "note"
 				if len(locs) > 0 {
-					detail = fmt.Sprintf("%s:%d", filepath.Base(locs[0].File), locs[0].Line+1)
+					addRef("#"+short, short, locs[0])
+				} else {
+					add("#"+short, 6, "note", short)
 				}
-add("#"+short, 6, detail, short)
 			}
 			return items
 		}
@@ -321,11 +353,11 @@ add("#"+short, 6, detail, short)
 			if partial != "" && !strings.HasPrefix(short, partial) {
 				continue
 			}
-			detail := "note"
 			if len(locs) > 0 {
-				detail = fmt.Sprintf("%s:%d", filepath.Base(locs[0].File), locs[0].Line+1)
+				addRef(id, short, locs[0])
+			} else {
+				add(id, 6, "note", short)
 			}
-			add(id, 6, detail, short)
 		}
 		return items
 	}
