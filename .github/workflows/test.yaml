@@ -18,6 +18,12 @@ jobs:
           go-version: '1.27.0-rc.1'
           cache: true
 
+      - name: Install Tree-sitter CLI binary
+        run: |
+          curl -sL https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-x64.gz | gunzip > tree-sitter
+          chmod +x tree-sitter
+          sudo mv tree-sitter /usr/local/bin/
+
       - name: Get dependencies
         run: go mod download
 
