@@ -1,5 +1,7 @@
-// Command devnotes-lsp is a minimal LSP server exposing DevNotes validation
-// diagnostics for host files and .dn files over stdio JSON-RPC.
+// Command devnotes-lsp is the DevNotes Language Server: it validates
+// DevNotes in host files and .dn files, serves hover previews, workspace
+// listing, context-aware completion, code actions, rename, formatting and a
+// set of devnotes.* commands over stdio JSON-RPC.
 package main
 
 import (
@@ -7,91 +9,60 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
+	"github.com/asaidimu/devnotes/engine/internal/model"
 	"github.com/asaidimu/devnotes/engine/internal/pipeline"
 	"github.com/asaidimu/devnotes/engine/internal/validate"
 )
 
 const serverName = "devnotes"
-const serverVersion = "0.1.0"
+const serverVersion = "0.3.0"
 
+// doc is one open document.
 type doc struct {
-	path string
-	text []byte
-	res  *pipeline.FileResult
+	uri     string
+	path    string
+	text    []byte
+	version int64 // -1 when unknown
+	res     *pipeline.FileResult
+}
+
+// utf16Col converts a byte column on a line of this doc to UTF-16 units.
+func (d *doc) utf16Col(line, col uint) uint {
+	lines := docLines(d)
+	if int(line) < len(lines) {
+		return pipeline.UTF16Col(lines[line], col)
+	}
+	return col
 }
 
 type server struct {
 	docs map[string]*doc // keyed by LSP URI
-	root string          // workspace root (from initialize rootUri)
-	// note index: id -> locations, populated lazily by scanning the root.
-	idx      map[string][]noteRef
-	idxStale bool
+	root string          // workspace root (from initialize)
+	cfg  config
+
+	// disk caches the analysis of unopened workspace files; nil until the
+	// first scan.
+	disk          map[string]*fileIndex
+	diskPublished map[string]bool // URIs already pushed diagnostics for
 }
 
-type noteRef struct {
-	File     string
-	Line     uint
-	Title    string
-	Category string
-	Status   string
-}
-
-// ---------------------------------------------------------------------------
-// JSON-RPC plumbing
-// ---------------------------------------------------------------------------
-
-type request struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-}
-
-// readMessage reads one Content-Length framed JSON-RPC message from r.
-func readMessage(r *bufio.Reader) ([]byte, error) {
-	var length int
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		if strings.HasPrefix(line, "Content-Length:") {
-			length, err = strconv.Atoi(strings.Trim(strings.TrimPrefix(line, "Content-Length:"), " "))
-			if err != nil || length < 0 {
-				return nil, fmt.Errorf("bad Content-Length: %q", line)
-			}
-		}
+func newServer() *server {
+	return &server{
+		docs: map[string]*doc{},
+		cfg:  defaultConfig(),
 	}
-	buf := make([]byte, length)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
 }
 
-func writeMessage(w *bufio.Writer, payload interface{}) error {
-	body, err := json.Marshal(payload)
+// readWorkspaceFile reads a file from disk, returning nil on error.
+func readWorkspaceFile(path string) []byte {
+	src, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return nil
 	}
-	if _, err := fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body)); err != nil {
-		return err
-	}
-	if _, err := w.Write(body); err != nil {
-		return err
-	}
-	return w.Flush()
+	return src
 }
 
 // ---------------------------------------------------------------------------
@@ -109,21 +80,88 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 			})
 		}
 	}
+	respondErr := func(code int, msg string) {
+		writeError(w, req.ID, code, msg)
+	}
 
 	switch req.Method {
 	case "initialize":
 		var p struct {
-			RootURI string `json:"rootUri"`
+			RootURI          string `json:"rootUri"`
+			RootPath         string `json:"rootPath"`
+			WorkspaceFolders []struct {
+				URI string `json:"uri"`
+			} `json:"workspaceFolders"`
 		}
 		json.Unmarshal(req.Params, &p)
-		if p.RootURI != "" {
+		switch {
+		case p.RootURI != "":
 			s.root = uriToPath(p.RootURI)
+		case len(p.WorkspaceFolders) > 0:
+			s.root = uriToPath(p.WorkspaceFolders[0].URI)
+		case p.RootPath != "":
+			s.root = p.RootPath
 		}
+		s.cfg = loadConfigFromRoot(s.root)
+		s.cfg.syncCustomCategories()
+		s.invalidateDisk()
 		respond(map[string]interface{}{
 			"capabilities": map[string]interface{}{
-				"textDocumentSync": 1, // full sync
+				"textDocumentSync": map[string]interface{}{
+					"openClose": true,
+					"change":    1, // full sync
+					"save":      map[string]interface{}{"includeText": false},
+				},
+				"diagnosticProvider": map[string]interface{}{
+					"identifier":            "devnotes",
+					"interFileDependencies": true,
+					"workspaceDiagnostics":  true,
+				},
+				"hoverProvider": true,
 				"completionProvider": map[string]interface{}{
-					"triggerCharacters": []string{"@", "#"},
+					"triggerCharacters": []string{"@", "#", ":", ",", " "},
+					"resolveProvider":   true,
+				},
+				"definitionProvider":      true,
+				"referencesProvider":      true,
+				"documentSymbolProvider":  true,
+				"workspaceSymbolProvider": true,
+				"documentLinkProvider": map[string]interface{}{
+					"resolveProvider": false,
+				},
+				"renameProvider": map[string]interface{}{
+					"prepareProvider": true,
+				},
+				"codeActionProvider": map[string]interface{}{
+					"codeActionKinds": []string{
+						"quickfix",
+						"refactor.rewrite.devnotes",
+						"source.fixAll.devnotes",
+					},
+					"resolveProvider": false,
+				},
+				"documentFormattingProvider":      true,
+				"documentRangeFormattingProvider": true,
+				"foldingRangeProvider":            true,
+				"selectionRangeProvider":          true,
+				"inlayHintProvider":               map[string]interface{}{},
+				"codeLensProvider":                map[string]interface{}{"resolveProvider": true},
+				"executeCommandProvider": map[string]interface{}{
+					"commands": []string{
+						"devnotes.list",
+						"devnotes.get",
+						"devnotes.graph",
+						"devnotes.nextInFile",
+						"devnotes.prevInFile",
+						"devnotes.exportContext",
+						"devnotes.reindex",
+						"devnotes.renameNote",
+					},
+				},
+				"workspace": map[string]interface{}{
+					"workspaceFolders": map[string]interface{}{
+						"supported": true, "changeNotifications": true,
+					},
 				},
 			},
 			"serverInfo": map[string]interface{}{
@@ -131,25 +169,59 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 				"version": serverVersion,
 			},
 		})
+	case "initialized":
+		// notification, no-op
 	case "shutdown":
 		respond(nil)
 	case "exit":
 		os.Exit(0)
+	case "workspace/didChangeConfiguration":
+		var p struct {
+			Settings map[string]interface{} `json:"settings"`
+		}
+		json.Unmarshal(req.Params, &p)
+		if err := s.cfg.apply(p.Settings); err != nil {
+			s.notify(w, "window/showMessage", map[string]interface{}{
+				"type": 2, "message": "devnotes: " + err.Error(),
+			})
+		}
+		s.cfg.syncCustomCategories()
+	case "workspace/didChangeWorkspaceFolders":
+		var p struct {
+			Event struct {
+				Added []struct {
+					URI string `json:"uri"`
+				} `json:"added"`
+			} `json:"event"`
+		}
+		json.Unmarshal(req.Params, &p)
+		if len(p.Event.Added) > 0 {
+			s.root = uriToPath(p.Event.Added[0].URI)
+			s.invalidateDisk()
+		}
+	case "workspace/didChangeWatchedFiles":
+		// A file changed on disk; drop the cached index so the next lookup
+		// re-scans.
+		s.invalidateDisk()
 	case "textDocument/didOpen":
 		var p struct {
 			TextDocument struct {
-				URI  string `json:"uri"`
-				Text string `json:"text"`
+				URI     string `json:"uri"`
+				Text    string `json:"text"`
+				Version int64  `json:"version"`
 			} `json:"textDocument"`
 		}
 		json.Unmarshal(req.Params, &p)
-		s.docs[p.TextDocument.URI] = &doc{path: uriToPath(p.TextDocument.URI), text: []byte(p.TextDocument.Text)}
-		s.idxStale = true
-		s.checkAll(w)
+		d := &doc{uri: p.TextDocument.URI, path: uriToPath(p.TextDocument.URI),
+			text: []byte(p.TextDocument.Text), version: p.TextDocument.Version}
+		s.docs[p.TextDocument.URI] = d
+		s.refreshDoc(d)
+		s.afterDocumentEvent(w)
 	case "textDocument/didChange":
 		var p struct {
 			TextDocument struct {
-				URI string `json:"uri"`
+				URI     string `json:"uri"`
+				Version int64  `json:"version"`
 			} `json:"textDocument"`
 			ContentChanges []struct {
 				Text string `json:"text"`
@@ -158,8 +230,11 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 		json.Unmarshal(req.Params, &p)
 		if d, ok := s.docs[p.TextDocument.URI]; ok && len(p.ContentChanges) > 0 {
 			d.text = []byte(p.ContentChanges[len(p.ContentChanges)-1].Text)
-			s.idxStale = true
-			s.checkAll(w)
+			if p.TextDocument.Version != 0 {
+				d.version = p.TextDocument.Version
+			}
+			s.refreshDoc(d)
+			s.afterDocumentEvent(w)
 		}
 	case "textDocument/didSave":
 		var p struct {
@@ -169,11 +244,11 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 		}
 		json.Unmarshal(req.Params, &p)
 		if d, ok := s.docs[p.TextDocument.URI]; ok {
-			if src, err := os.ReadFile(d.path); err == nil {
+			if src := readWorkspaceFile(d.path); src != nil {
 				d.text = src
 			}
-			s.idxStale = true
-			s.checkAll(w)
+			s.refreshDoc(d)
+			s.afterDocumentEvent(w)
 		}
 	case "textDocument/didClose":
 		var p struct {
@@ -184,9 +259,27 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 		json.Unmarshal(req.Params, &p)
 		if _, ok := s.docs[p.TextDocument.URI]; ok {
 			delete(s.docs, p.TextDocument.URI)
-			s.checkAll(w)
+			s.afterDocumentEvent(w)
 		}
-	case "textDocument/completion":
+	case "textDocument/diagnostic":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.pullDocumentDiagnostics(p.TextDocument.URI))
+	case "workspace/diagnostic":
+		respond(s.pullWorkspaceDiagnostics())
+	case "textDocument/hover":
+		var pos posParams
+		json.Unmarshal(req.Params, &pos)
+		respond(s.hover(pos.TextDocument.URI, pos.Position.Line, pos.Position.Character))
+	case "textDocument/definition":
+		var pos posParams
+		json.Unmarshal(req.Params, &pos)
+		respond(s.definition(pos.TextDocument.URI, pos.Position.Line, pos.Position.Character))
+	case "textDocument/references":
 		var p struct {
 			TextDocument struct {
 				URI string `json:"uri"`
@@ -195,409 +288,359 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 				Line      uint `json:"line"`
 				Character uint `json:"character"`
 			} `json:"position"`
+			Context struct {
+				IncludeDeclaration bool `json:"includeDeclaration"`
+			} `json:"context"`
 		}
 		json.Unmarshal(req.Params, &p)
-		items := completionItems(s, p.TextDocument.URI, p.Position.Line, p.Position.Character)
-		respond(map[string]interface{}{
-			"isIncomplete": false,
-			"items":        items,
+		respond(s.references(p.TextDocument.URI, p.Position.Line, p.Position.Character, p.Context.IncludeDeclaration))
+	case "textDocument/documentSymbol":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.documentSymbols(p.TextDocument.URI))
+	case "workspace/symbol":
+		var p struct {
+			Query string `json:"query"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.workspaceSymbols(p.Query))
+	case "textDocument/documentLink":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.documentLinks(p.TextDocument.URI))
+	case "textDocument/foldingRange":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.foldingRanges(p.TextDocument.URI))
+	case "textDocument/selectionRange":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Positions []lspPos `json:"positions"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.selectionRanges(p.TextDocument.URI, p.Positions))
+	case "textDocument/inlayHint":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Range struct {
+				Start struct {
+					Line      uint `json:"line"`
+					Character uint `json:"character"`
+				} `json:"start"`
+				End struct {
+					Line      uint `json:"line"`
+					Character uint `json:"character"`
+				} `json:"end"`
+			} `json:"range"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.inlayHints(p.TextDocument.URI, p.Range.Start.Line, p.Range.End.Line))
+	case "textDocument/codeLens":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.codeLens(p.TextDocument.URI))
+	case "codeLens/resolve":
+		var lens struct {
+			Data json.RawMessage `json:"data"`
+		}
+		json.Unmarshal(req.Params, &lens)
+		respond(s.resolveCodeLens(lens.Data))
+	case "textDocument/completion":
+		var pos posParams
+		json.Unmarshal(req.Params, &pos)
+		items := s.completionItems(pos.TextDocument.URI, pos.Position.Line, pos.Position.Character)
+		if items == nil {
+			items = []map[string]interface{}{}
+		}
+		respond(map[string]interface{}{"isIncomplete": false, "items": items})
+	case "completionItem/resolve":
+		var item map[string]interface{}
+		json.Unmarshal(req.Params, &item)
+		respond(s.resolveCompletion(item))
+	case "textDocument/codeAction":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Range struct {
+				Start struct {
+					Line      uint `json:"line"`
+					Character uint `json:"character"`
+				} `json:"start"`
+				End struct {
+					Line      uint `json:"line"`
+					Character uint `json:"character"`
+				} `json:"end"`
+			} `json:"range"`
+			Context struct {
+				Only []string `json:"only"`
+			} `json:"context"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.codeActions(p.TextDocument.URI,
+			p.Range.Start.Line, p.Range.Start.Character,
+			p.Range.End.Line, p.Range.End.Character, p.Context.Only))
+	case "textDocument/rename":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      uint `json:"line"`
+				Character uint `json:"character"`
+			} `json:"position"`
+			NewName string `json:"newName"`
+		}
+		json.Unmarshal(req.Params, &p)
+		result, code, msg := s.rename(p.TextDocument.URI, p.Position.Line, p.Position.Character, p.NewName)
+		if code != 0 {
+			respondErr(code, msg)
+			return
+		}
+		respond(result)
+	case "textDocument/prepareRename":
+		var pos posParams
+		json.Unmarshal(req.Params, &pos)
+		respond(s.prepareRename(pos.TextDocument.URI, pos.Position.Line, pos.Position.Character))
+	case "textDocument/formatting":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		json.Unmarshal(req.Params, &p)
+		respond(s.formatting(p.TextDocument.URI, nil))
+	case "textDocument/rangeFormatting":
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Range struct {
+				Start struct {
+					Line      uint `json:"line"`
+					Character uint `json:"character"`
+				} `json:"start"`
+				End struct {
+					Line      uint `json:"line"`
+					Character uint `json:"character"`
+				} `json:"end"`
+			} `json:"range"`
+		}
+		json.Unmarshal(req.Params, &p)
+		rng := modelRange(p.Range.Start.Line, p.Range.Start.Character, p.Range.End.Line, p.Range.End.Character)
+		respond(s.formatting(p.TextDocument.URI, &rng))
+	case "workspace/executeCommand":
+		var p struct {
+			Command   string            `json:"command"`
+			Arguments []json.RawMessage `json:"arguments"`
+		}
+		json.Unmarshal(req.Params, &p)
+		var raw json.RawMessage
+		if len(p.Arguments) > 0 {
+			raw = p.Arguments[0]
+		}
+		switch p.Command {
+		case "devnotes.list":
+			result, code, msg := s.listNotes(raw)
+			if code != 0 {
+				respondErr(code, msg)
+			} else {
+				respond(result)
+			}
+		case "devnotes.get":
+			result, code, msg := s.getNote(raw)
+			if code != 0 {
+				respondErr(code, msg)
+			} else {
+				respond(result)
+			}
+		case "devnotes.graph":
+			result, code, msg := s.graph(raw)
+			if code != 0 {
+				respondErr(code, msg)
+			} else {
+				respond(result)
+			}
+		case "devnotes.nextInFile", "devnotes.prevInFile":
+			var args struct {
+				URI  string `json:"uri"`
+				Line int    `json:"line"`
+				Wrap *bool  `json:"wrap"`
+			}
+			if err := json.Unmarshal(raw, &args); err != nil {
+				respondErr(errInvalidParams, "arguments must contain {\"uri\", \"line\"}")
+				return
+			}
+			wrap := true
+			if args.Wrap != nil {
+				wrap = *args.Wrap
+			}
+			respond(s.nextPrevInFile(args.URI, args.Line, wrap, p.Command == "devnotes.nextInFile"))
+		case "devnotes.exportContext":
+			result, code, msg := s.exportContext(raw)
+			if code != 0 {
+				respondErr(code, msg)
+			} else {
+				respond(result)
+			}
+		case "devnotes.reindex":
+			respond(s.reindex())
+		case "devnotes.renameNote":
+			result, code, msg := s.renameNoteCommand(raw)
+			if code != 0 {
+				respondErr(code, msg)
+			} else {
+				respond(result)
+			}
+		default:
+			respondErr(errInvalidRequest, "Unknown command: "+p.Command)
+		}
+	default:
+		if len(req.ID) > 0 {
+			respondErr(errMethodNotFound, "Method not supported: "+req.Method)
+		}
+	}
+}
+
+// notify sends a server-initiated notification.
+func (s *server) notify(w *bufio.Writer, method string, params interface{}) {
+	_ = writeMessage(w, map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	})
+}
+
+type posParams struct {
+	TextDocument struct {
+		URI string `json:"uri"`
+	} `json:"textDocument"`
+	Position struct {
+		Line      uint `json:"line"`
+		Character uint `json:"character"`
+	} `json:"position"`
+}
+
+// modelRange builds a byte-coordinate range for range formatting. Clients
+// send UTF-16 columns; whole-note formatting only compares line numbers, so
+// the character columns are converted against the doc lazily at call sites.
+func modelRange(sl, sc, el, ec uint) model.Range {
+	return model.Range{StartLine: sl, StartCol: sc, EndLine: el, EndCol: ec}
+}
+
+// refreshDoc re-runs the analysis pipeline for one document.
+func (s *server) refreshDoc(d *doc) {
+	if len(d.text) == 0 {
+		d.res = &pipeline.FileResult{File: d.path}
+		return
+	}
+	res, err := pipeline.CheckFile(d.path, filepath.Ext(d.path), d.text)
+	if err != nil {
+		d.res = &pipeline.FileResult{File: d.path}
+		return
+	}
+	d.res = &res
+}
+
+// afterDocumentEvent republishes diagnostics after any document lifecycle
+// event. Open documents are always published; unopened files that carry
+// diagnostics (per-file or workspace-level) are published once per scan
+// generation so cross-file problems become visible without spamming.
+func (s *server) afterDocumentEvent(w *bufio.Writer) {
+	entries := s.allEntries()
+	ws := map[string][]validate.WSDiag{}
+	for _, dg := range validate.CheckWorkspace(entryLocs(entries)) {
+		ws[dg.File] = append(ws[dg.File], dg)
+	}
+
+	for uri, d := range s.docs {
+		items := []interface{}{}
+		if d.res != nil {
+			for _, dg := range d.res.Diags {
+				items = append(items, s.lspDiagFrom(d, dg))
+			}
+		}
+		for _, dg := range ws[d.path] {
+			items = append(items, s.lspDiagFrom(d, pipeline.Diag{
+				File: d.path, Severity: dg.Severity, Code: dg.Code, Message: dg.Message,
+				StartLine: dg.Range.StartLine, StartCol: dg.Range.StartCol,
+				EndLine: dg.Range.EndLine, EndCol: dg.Range.EndCol,
+				Related: dg.Related, Data: dg.Data,
+			}))
+		}
+		s.notify(w, "textDocument/publishDiagnostics", map[string]interface{}{
+			"uri":         uri,
+			"diagnostics": items,
+		})
+	}
+
+	if s.disk == nil {
+		return
+	}
+	open := map[string]bool{}
+	for _, d := range s.docs {
+		open[d.path] = true
+	}
+	for path, fi := range s.disk {
+		uri := pathToURI(path)
+		if open[path] || s.diskPublished[uri] {
+			continue
+		}
+		has := len(fi.diags) > 0 || len(ws[path]) > 0
+		if !has {
+			continue
+		}
+		s.diskPublished[uri] = true
+		items := s.fileDiagsToLSP(path, fi.diags)
+		fake := &doc{uri: uri, path: path, text: readWorkspaceFile(path)}
+		for _, dg := range ws[path] {
+			items = append(items, s.lspDiagFrom(fake, pipeline.Diag{
+				File: path, Severity: dg.Severity, Code: dg.Code, Message: dg.Message,
+				StartLine: dg.Range.StartLine, StartCol: dg.Range.StartCol,
+				EndLine: dg.Range.EndLine, EndCol: dg.Range.EndCol,
+				Related: dg.Related, Data: dg.Data,
+			}))
+		}
+		s.notify(w, "textDocument/publishDiagnostics", map[string]interface{}{
+			"uri":         uri,
+			"diagnostics": items,
 		})
 	}
 }
 
-// completionItems returns DevNotes completions for the current line context.
-func completionItems(s *server, uri string, line, col uint) []map[string]interface{} {
-	var d *doc
-	if dd, ok := s.docs[uri]; ok {
-		d = dd
+// entryLocs strips entries down to the NoteLocs the workspace checker wants.
+func entryLocs(entries []NoteEntry) []validate.NoteLoc {
+	out := make([]validate.NoteLoc, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Loc)
 	}
-	prefix := ""
-	if d != nil {
-		lineText := nthLine(d.text, int(line))
-		ci := int(col)
-		if ci > len(lineText) {
-			ci = len(lineText)
-		}
-		prefix = string(lineText[:ci])
-	}
-
-	// Strip host-language comment prefixes so header completions work in
-	// Go/TS comments too (e.g. "// @note #id obs...").
-	p := strings.TrimSpace(prefix)
-	p = strings.TrimPrefix(p, "//")
-	p = strings.TrimPrefix(p, "/*")
-	p = strings.TrimPrefix(p, "*")
-	p = strings.TrimPrefix(p, "//")
-	p = strings.TrimSpace(p)
-
-	items := []map[string]interface{}{}
-	lower := strings.ToLower(p)
-
-	add := func(label string, kind int, detail, insert string) {
-		item := map[string]interface{}{"label": label, "kind": kind}
-		if detail != "" {
-			item["detail"] = detail
-		}
-		if insert != "" {
-			item["insertText"] = insert
-			item["insertTextFormat"] = 2 // plain text
-		}
-		items = append(items, item)
-	}
-
-	addRef := func(label, insert string, r noteRef) {
-		item := map[string]interface{}{
-			"label":           label,
-			"kind":            6, // reference
-			"insertText":      insert,
-			"insertTextFormat": 2,
-		}
-		title := strings.TrimSpace(r.Title)
-		if title != "" {
-			item["detail"] = title
-		} else {
-			item["detail"] = "untitled"
-		}
-		parts := []string{}
-		if r.Category != "" {
-			parts = append(parts, r.Category)
-		}
-		if r.Status != "" {
-			parts = append(parts, r.Status)
-		}
-		if r.File != "" {
-			parts = append(parts, filepath.Base(r.File))
-		}
-		if len(parts) > 0 {
-			item["documentation"] = map[string]interface{}{
-				"kind":  "markdown",
-				"value": strings.Join(parts, " · "),
-			}
-		}
-		items = append(items, item)
-	}
-
-	// Inside "@note ..." header: category/field context.
-	if strings.Contains(lower, "@note") {
-		// After ':' we're in the title; nothing to complete.
-		if strings.Contains(p, ":") {
-			return items
-		}
-		// Right after "@note #" or "#partial": offer known IDs to reuse.
-		if hashIdx := strings.Index(p, "#"); hashIdx >= 0 {
-			partial := strings.TrimPrefix(p[hashIdx+1:], "#")
-			refs := s.ensureIndex()
-			for id, locs := range refs {
-				short := strings.TrimPrefix(id, "#")
-				if partial != "" && !strings.HasPrefix(short, partial) {
-					continue
-				}
-				if len(locs) > 0 {
-					addRef("#"+short, short, locs[0])
-				} else {
-					add("#"+short, 6, "existing note", short)
-				}
-			}
-			return items
-		}
-		// Directives only when at the start of a directive line.
-		if !strings.Contains(lower, "@author") && !strings.Contains(lower, "@see") {
-			add("@author", 14, "directive", "@author ")
-			add("@see", 14, "directive", "@see ")
-		}
-		// Categories.
-		for _, c := range coreCategoriesList {
-			add(c, 12, "category", c)
-		}
-		// Statuses.
-		for _, st := range coreStatusesList {
-			add(st, 12, "status", st)
-		}
-		// Priorities.
-		for _, pr := range corePrioritiesList {
-			add(pr, 12, "priority", pr)
-		}
-		return items
-	}
-
-	// "@see #..." or "@see #partial": complete known note IDs from the
-	// workspace index.
-	if strings.HasPrefix(p, "@see") {
-		hashIdx := strings.Index(p, "#")
-		if hashIdx >= 0 {
-			partial := strings.TrimPrefix(p[hashIdx+1:], "#")
-			refs := s.ensureIndex()
-			for id, locs := range refs {
-				short := strings.TrimPrefix(id, "#")
-				if partial != "" && !strings.HasPrefix(short, partial) {
-					continue
-				}
-				if len(locs) > 0 {
-					addRef("#"+short, short, locs[0])
-				} else {
-					add("#"+short, 6, "note", short)
-				}
-			}
-			return items
-		}
-		add("@see", 14, "directive", "@see ")
-		return items
-	}
-
-	// Bare "#" prefix on a directive-looking line: offer known note IDs.
-	if strings.HasPrefix(p, "#") {
-		partial := strings.TrimPrefix(p[1:], "#")
-		refs := s.ensureIndex()
-		for id, locs := range refs {
-			short := strings.TrimPrefix(id, "#")
-			if partial != "" && !strings.HasPrefix(short, partial) {
-				continue
-			}
-			if len(locs) > 0 {
-				addRef(id, short, locs[0])
-			} else {
-				add(id, 6, "note", short)
-			}
-		}
-		return items
-	}
-
-	// Directive lines (@author/@see/extension).
-	if strings.HasPrefix(p, "@") {
-		add("@note", 14, "note header", "@note #id category : title")
-		add("@author", 14, "directive", "@author ")
-		add("@see", 14, "directive", "@see ")
-		return items
-	}
-
-	// Blank / other line: offer a full note header + directives.
-	add("@note", 14, "note header", "@note #id category : title")
-	add("@author", 14, "directive", "@author ")
-	add("@see", 14, "directive", "@see ")
-	for _, c := range coreCategoriesList {
-		add(c, 12, "category", c)
-	}
-	return items
-}
-
-var coreCategoriesList = []string{"observation", "todo", "issue", "context", "lesson", "prompt"}
-var coreStatusesList = []string{"open", "resolved", "wontfix", "deprecated"}
-var corePrioritiesList = []string{"P0", "P1", "P2", "P3"}
-
-// ensureIndex populates s.idx from the workspace root on first use, or after
-// any document changed. Returns the current index.
-func (s *server) ensureIndex() map[string][]noteRef {
-	if s.idx == nil || s.idxStale {
-		s.scanWorkspace()
-	}
-	return s.idx
-}
-
-// scanWorkspace walks the root (or the directory of the first open doc) and
-// collects every note ID defined in supported files. Non-devnotes files are
-// skipped; directories named like vendoring/output dirs are pruned.
-func (s *server) scanWorkspace() {
-	idx := map[string][]noteRef{}
-	root := s.root
-	if root == "" {
-		for _, d := range s.docs {
-			if d.path != "" {
-				root = filepath.Dir(d.path)
-				break
-			}
-		}
-	}
-	if root == "" {
-		s.idx = idx
-		s.idxStale = false
-		return
-	}
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "dist" || name == "build") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if pipeline.Lang(filepath.Ext(path)) == "" {
-			return nil
-		}
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		res, err := pipeline.CheckFile(path, filepath.Ext(path), src)
-		if err != nil {
-			return nil
-		}
-		for _, loc := range res.NoteLocs {
-			id := loc.Note.ID
-			if id != "" {
-				idx[id] = append(idx[id], noteRef{
-					File:     loc.File,
-					Line:     loc.Note.Range.StartLine,
-					Title:    loc.Note.Title,
-					Category: loc.Note.Category,
-					Status:   loc.Note.Status,
-				})
-			}
-		}
-		return nil
-	})
-	s.idx = idx
-	s.idxStale = false
-}
-
-// nthLine returns the (0-indexed) line of b as a string, excluding its newline.
-func nthLine(b []byte, line int) string {
-	if line < 0 {
-		return ""
-	}
-	start := 0
-	cur := 0
-	for start < len(b) && cur < line {
-		nl := indexByte(b[start:], '\n')
-		if nl < 0 {
-			return ""
-		}
-		start += nl + 1
-		cur++
-	}
-	end := indexByte(b[start:], '\n')
-	if end < 0 {
-		end = len(b) - start
-	}
-	return string(b[start : start+end])
-}
-
-func indexByte(b []byte, c byte) int {
-	for i, x := range b {
-		if x == c {
-			return i
-		}
-	}
-	return -1
-}
-
-// checkAll re-checks every open doc, then publishes diagnostics for all of
-// them (workspace checks can attribute diagnostics to any open file).
-func (s *server) checkAll(w *bufio.Writer) {
-	// 1. Per-file checks.
-	for _, d := range s.docs {
-		if len(d.text) == 0 {
-			d.res = &pipeline.FileResult{File: d.path}
-			continue
-		}
-		res, err := pipeline.CheckFile(d.path, filepath.Ext(d.path), d.text)
-		if err != nil {
-			d.res = &pipeline.FileResult{File: d.path}
-			continue
-		}
-		d.res = &res
-	}
-
-	// 2. Workspace checks over all open notes.
-	var noteLocs []validate.NoteLoc
-	for uri, d := range s.docs {
-		if d.res == nil {
-			continue
-		}
-		for _, loc := range d.res.NoteLocs {
-			noteLocs = append(noteLocs, validate.NoteLoc{File: uri, Note: loc.Note})
-		}
-	}
-	wsByURI := map[string][]validate.WSDiag{}
-	for _, dg := range validate.CheckWorkspace(noteLocs) {
-		wsByURI[dg.File] = append(wsByURI[dg.File], dg)
-	}
-
-	// 3. Publish.
-	for uri, d := range s.docs {
-		if d.res == nil {
-			continue
-		}
-		s.publish(uri, d.res, wsByURI[uri], w)
-	}
-}
-
-// publish sends textDocument/publishDiagnostics for one doc.
-func (s *server) publish(uri string, res *pipeline.FileResult, ws []validate.WSDiag, w *bufio.Writer) {
-	lines := res.Lines()
-	diags := []map[string]interface{}{}
-	for _, d := range res.Diags {
-		diags = append(diags, lspDiag(lines, d.Severity, d.Code, d.Message, d))
-	}
-	for _, d := range ws {
-		diags = append(diags, lspDiag(lines, d.Severity, d.Code, d.Message, pipeline.Diag{
-			StartLine: d.Range.StartLine, StartCol: d.Range.StartCol,
-			EndLine: d.Range.EndLine, EndCol: d.Range.EndCol,
-		}))
-	}
-	writeMessage(w, map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "textDocument/publishDiagnostics",
-		"params": map[string]interface{}{
-			"uri":         uri,
-			"diagnostics": diags,
-		},
-	})
-}
-
-func lspDiag(lines [][]byte, sev validate.Severity, code, message string, d pipeline.Diag) map[string]interface{} {
-	sl, sc := d.StartLine, d.StartCol
-	el, ec := d.EndLine, d.EndCol
-	if sl > el || (sl == el && sc > ec) {
-		el, ec = sl, sc
-	}
-	return map[string]interface{}{
-		"range": map[string]interface{}{
-			"start": map[string]interface{}{"line": sl, "character": pipeline.UTF16Col(lineAt(lines, sl), sc)},
-			"end":   map[string]interface{}{"line": el, "character": pipeline.UTF16Col(lineAt(lines, el), ec)},
-		},
-		"severity": int(sev) + 1, // LSP: 1=Error 2=Warning 3=Info 4=Hint
-		"code":     code,
-		"source":   serverName,
-		"message":  strings.TrimSpace(message),
-	}
-}
-
-func lineAt(lines [][]byte, line uint) []byte {
-	if line < uint(len(lines)) {
-		return lines[line]
-	}
-	return nil
-}
-
-// ---------------------------------------------------------------------------
-// URI helpers
-// ---------------------------------------------------------------------------
-
-func uriToPath(uri string) string {
-	u, err := url.Parse(uri)
-	if err != nil {
-		return uri
-	}
-	if u.Scheme != "file" {
-		return uri
-	}
-	p := u.Path
-	if u.Host != "" && u.Host != "localhost" {
-		p = "//" + u.Host + p
-	}
-	if dec, err := url.PathUnescape(p); err == nil {
-		p = dec
-	}
-	return p
+	return out
 }
 
 // ---------------------------------------------------------------------------
 
 func main() {
-	s := &server{docs: map[string]*doc{}}
+	s := newServer()
 	out := bufio.NewWriter(os.Stdout)
 	in := bufio.NewReader(os.Stdin)
 
