@@ -67,6 +67,13 @@ return {
   s('see', {
     t('@see #'), i(1, 'id'), t({ '', '' }), i(0),
   }),
+  -- Extension directives supported by the LSP (assign, deadline).
+  s('assign', {
+    t('@assign '), i(1, 'name'), t({ '', '' }), i(0),
+  }),
+  s('deadline', {
+    t('@deadline '), i(1, '2026-12-31'), t({ '', '' }), i(0),
+  }),
 
   -- Complete note with directives + body.
   s('note-full', {

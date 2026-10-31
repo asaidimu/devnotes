@@ -78,6 +78,49 @@ function M.setup(user)
     end)
   end
 
+  -- 5. LSP reference client (spec §14): server enablement, reviewer
+  --    commands and buffer-local mappings. Requires nvim 0.11+; everything
+  --    is behind pcall so the parser/snippet features keep working on
+  --    older editors.
+  if opts.lsp ~= false then
+    pcall(function()
+      local lsp = require('devnotes.lsp')
+      lsp.setup_attach()
+      lsp.enable()
+
+      vim.api.nvim_create_user_command('DevNotesList', function()
+        lsp.list()
+      end, { desc = 'DevNotes: browse all open notes' })
+      vim.api.nvim_create_user_command('DevNotesListIssues', function()
+        lsp.list_issues()
+      end, { desc = 'DevNotes: browse open issues' })
+      vim.api.nvim_create_user_command('DevNotesListTodos', function()
+        lsp.list_todos()
+      end, { desc = 'DevNotes: browse todos' })
+      vim.api.nvim_create_user_command('DevNotesFormat', function()
+        lsp.format()
+      end, { desc = 'DevNotes: canonicalize note formatting (explicit, never on save)' })
+      vim.api.nvim_create_user_command('DevNotesNext', function()
+        vim.lsp.buf_request(0, 'workspace/executeCommand',
+          { command = 'devnotes.nextInFile', arguments = { { uri = vim.uri_from_bufnr(0), line = vim.api.nvim_win_get_cursor(0)[1] - 1, wrap = true } } },
+          function(_, result)
+            if result and result.range then
+              vim.api.nvim_win_set_cursor(0, { result.range.start.line + 1, result.range.start.character })
+            end
+          end)
+      end, { desc = 'DevNotes: jump to next note in file' })
+      vim.api.nvim_create_user_command('DevNotesPrev', function()
+        vim.lsp.buf_request(0, 'workspace/executeCommand',
+          { command = 'devnotes.prevInFile', arguments = { { uri = vim.uri_from_bufnr(0), line = vim.api.nvim_win_get_cursor(0)[1] - 1, wrap = true } } },
+          function(_, result)
+            if result and result.range then
+              vim.api.nvim_win_set_cursor(0, { result.range.start.line + 1, result.range.start.character })
+            end
+          end)
+      end, { desc = 'DevNotes: jump to previous note in file' })
+    end)
+  end
+
   return M
 end
 
