@@ -61,7 +61,31 @@ type Note struct {
 	Range     Range
 	// Fields is every header_field in source order, used for duplicate detection.
 	Fields []HeaderField
+
+	// Token-level source ranges (same coordinate space as Range). Zero
+	// values mean "not captured"; consumers must fall back to Range.
+	IDRange       Range
+	CategoryRange Range
+	TitleRange    Range
+	HeaderRange   Range // the whole header_line node
+	// TagRanges is parallel to Tags. AuthorLocs is parallel to Authors and
+	// covers the author value token. DirectiveRanges holds every
+	// directive_line node in source order.
+	TagRanges       []Range
+	AuthorLocs      []Range
+	DirectiveRanges []Range
 }
+
+// ParseDiag reports a note that the grammar could not parse cleanly.
+type ParseDiag struct {
+	Code    string
+	Message string
+	Range   Range
+}
+
+const malformedHeaderMsg = "This note could not be parsed. A note starts with a header line " +
+	"\"@note #id category [status] [priority] [timestamp] [#tags] : Title\", followed by optional " +
+	"@author/@see directives, a blank line, and the body."
 
 func r(n *sitter.Node) Range {
 	sp := n.StartPosition()
@@ -71,23 +95,74 @@ func r(n *sitter.Node) Range {
 
 // Build parses normalized content and returns the notes in source order.
 func Build(src []byte) ([]Note, error) {
-	tree, err := cst.Parse(src)
-	if err != nil {
-		return nil, err
-	}
-	defer tree.Close()
-	return buildTree(src, tree.RootNode()), nil
+	notes, _, err := BuildWithDiags(src)
+	return notes, err
 }
 
-func buildTree(src []byte, root *sitter.Node) []Note {
-	var notes []Note
-	for _, blk := range cst.Children(root) {
-		if blk.Kind() != "note_block" {
-			continue
-		}
-		notes = append(notes, buildNote(src, blk))
+// BuildWithDiags parses normalized content and additionally reports every
+// region the grammar could not interpret as a note (INVALID_HEADER). Notes
+// with recoverable errors are still returned so downstream tooling can
+// offer fixes; the diagnostics make the breakage visible instead of
+// silently dropping the text.
+func BuildWithDiags(src []byte) ([]Note, []ParseDiag, error) {
+	tree, err := cst.Parse(src)
+	if err != nil {
+		return nil, nil, err
 	}
-	return notes
+	defer tree.Close()
+	root := tree.RootNode()
+	var notes []Note
+	var diags []ParseDiag
+	for _, blk := range cst.Children(root) {
+		switch blk.Kind() {
+		case "note_block":
+			if blk.HasError() {
+				diags = append(diags, ParseDiag{
+					Code:    "INVALID_HEADER",
+					Message: malformedHeaderMsg,
+					Range:   errRange(blk),
+				})
+			}
+			notes = append(notes, buildNote(src, blk))
+		case "ERROR":
+			diags = append(diags, ParseDiag{
+				Code:    "INVALID_HEADER",
+				Message: malformedHeaderMsg,
+				Range:   r(blk),
+			})
+		}
+	}
+	return notes, diags, nil
+}
+
+// errRange narrows a block-level error to the first erroneous descendant so
+// the squiggle lands on the broken tokens rather than the whole note.
+func errRange(blk *sitter.Node) Range {
+	var found Range
+	ok := false
+	var walkErr func(n *sitter.Node) *sitter.Node
+	walkErr = func(n *sitter.Node) *sitter.Node {
+		if n.IsError() {
+			return n
+		}
+		for i := uint(0); i < n.ChildCount(); i++ {
+			c := n.Child(i)
+			if c == nil {
+				continue
+			}
+			if hit := walkErr(c); hit != nil {
+				return hit
+			}
+		}
+		return nil
+	}
+	if hit := walkErr(blk); hit != nil {
+		found, ok = r(hit), true
+	}
+	if !ok {
+		found = r(blk)
+	}
+	return found
 }
 
 func buildNote(src []byte, blk *sitter.Node) Note {
@@ -98,8 +173,10 @@ func buildNote(src []byte, blk *sitter.Node) Note {
 	for _, child := range cst.Children(blk) {
 		switch child.Kind() {
 		case "header_line":
+			n.HeaderRange = r(child)
 			buildHeader(src, child, &n)
 		case "directive_line":
+			n.DirectiveRanges = append(n.DirectiveRanges, r(child))
 			buildDirective(src, child, &n)
 		case "body_line":
 			bodyLines = append(bodyLines, bodyLineText(src, child))
@@ -117,12 +194,15 @@ func buildHeader(src []byte, header *sitter.Node, n *Note) {
 		switch child.Kind() {
 		case "id":
 			n.ID = cst.NodeText(child, src)
+			n.IDRange = r(child)
 		case "category":
 			n.Category = cst.NodeText(child, src)
+			n.CategoryRange = r(child)
 		case "header_field":
 			buildField(src, child, n)
 		case "title":
 			n.Title = cst.NodeText(child, src)
+			n.TitleRange = r(child)
 			n.NoTitle = child.HasError()
 		}
 	}
@@ -145,9 +225,11 @@ func buildField(src []byte, field *sitter.Node, n *Note) {
 			n.Ext = append(n.Ext, HeaderField{Kind: "extension", Value: text, Range: r(child)})
 		case "tags":
 			n.Tags = nil
+			n.TagRanges = nil
 			for _, tag := range cst.Children(child) {
 				if tag.Kind() == "tag_name" {
 					n.Tags = append(n.Tags, cst.NodeText(tag, src))
+					n.TagRanges = append(n.TagRanges, r(tag))
 				}
 			}
 			n.Fields = append(n.Fields, HeaderField{Kind: "tags", Value: strings.Join(n.Tags, ","), Range: r(child)})
@@ -161,6 +243,7 @@ func buildDirective(src []byte, dl *sitter.Node, n *Note) {
 		case "author_directive":
 			if av := namedChild(child, "author_value"); av != nil {
 				n.Authors = append(n.Authors, cst.NodeText(av, src))
+				n.AuthorLocs = append(n.AuthorLocs, r(av))
 			}
 		case "see_directive":
 			if ref := namedChild(child, "reference"); ref != nil {

@@ -22,13 +22,15 @@ type Diag struct {
 	StartCol  uint
 	EndLine   uint
 	EndCol    uint
+	Related   []validate.Related
+	Data      map[string]any
 }
 
 // FileResult holds per-file diagnostics plus notes for workspace checks.
 type FileResult struct {
-	File      string
-	Diags     []Diag
-	NoteLocs  []validate.NoteLoc
+	File         string
+	Diags        []Diag
+	NoteLocs     []validate.NoteLoc
 	contentLines [][]byte
 }
 
@@ -64,9 +66,16 @@ func CheckFile(filename, ext string, src []byte) (FileResult, error) {
 	var notes []model.Note
 	for _, region := range regions {
 		content, sm := normalize.Normalize(region)
-		ns, err := model.Build([]byte(ensureTerminator(content)))
+		ns, pdiags, err := model.BuildWithDiags([]byte(ensureTerminator(content)))
 		if err != nil {
 			return res, err
+		}
+		for _, pd := range pdiags {
+			r := sourceRange(pd.Range, sm)
+			res.Diags = append(res.Diags, Diag{
+				File: filename, Severity: validate.Error, Code: pd.Code, Message: pd.Message,
+				StartLine: r.StartLine, StartCol: r.StartCol, EndLine: r.EndLine, EndCol: r.EndCol,
+			})
 		}
 		for i := range ns {
 			n := &ns[i]
@@ -77,14 +86,35 @@ func CheckFile(filename, ext string, src []byte) (FileResult, error) {
 				res.Diags = append(res.Diags, mapDiag(filename, d, sm))
 			}
 			// Workspace checks need source-mapped note positions.
+			prefixes := notePrefixes(n, sm, src)
 			mapNote(n, &sm)
 			notes = append(notes, *n)
+			res.NoteLocs = append(res.NoteLocs, validate.NoteLoc{File: filename, Note: *n, Prefixes: prefixes})
 		}
 	}
-	for _, n := range notes {
-		res.NoteLocs = append(res.NoteLocs, validate.NoteLoc{File: filename, Note: n})
-	}
 	return res, nil
+}
+
+// notePrefixes returns, for each line the note spans, the host-file comment
+// prefix that the normalizer stripped (e.g. "// " or " * "). Downstream edit
+// computation uses it to rewrite notes inside host comments without
+// touching the surrounding code.
+func notePrefixes(n *model.Note, sm normalize.SourceMap, src []byte) []string {
+	lines := splitLines(src)
+	var out []string
+	for ln := n.Range.StartLine; ln <= n.Range.EndLine; ln++ {
+		prefix := ""
+		// n.Range is still in normalized coordinates here; each
+		// normalized line maps 1:1 onto a source line + shift.
+		if int(ln) < len(sm.Lines) {
+			ref := sm.Lines[ln]
+			if int(ref.Line) < len(lines) && int(ref.Shift) <= len(lines[ref.Line]) {
+				prefix = string(lines[ref.Line][:ref.Shift])
+			}
+		}
+		out = append(out, prefix)
+	}
+	return out
 }
 
 // ensureTerminator guarantees the normalized content parses as complete notes:
@@ -129,7 +159,8 @@ func splitLines(src []byte) [][]byte {
 
 func mapDiag(file string, d validate.Diagnostic, sm normalize.SourceMap) Diag {
 	sl, sc, el, ec := sm.MapRange(d.Range.StartLine, d.Range.StartCol, d.Range.EndLine, d.Range.EndCol)
-	return Diag{file, d.Severity, d.Code, d.Message, sl, sc, el, ec}
+	return Diag{File: file, Severity: d.Severity, Code: d.Code, Message: d.Message,
+		StartLine: sl, StartCol: sc, EndLine: el, EndCol: ec, Related: d.Related, Data: d.Data}
 }
 
 func sourceRange(r model.Range, sm normalize.SourceMap) model.Range {
@@ -142,6 +173,10 @@ func sourceRange(r model.Range, sm normalize.SourceMap) model.Range {
 // source positions.
 func mapNote(n *model.Note, sm *normalize.SourceMap) {
 	n.Range = sourceRange(n.Range, *sm)
+	n.IDRange = sourceRange(n.IDRange, *sm)
+	n.CategoryRange = sourceRange(n.CategoryRange, *sm)
+	n.TitleRange = sourceRange(n.TitleRange, *sm)
+	n.HeaderRange = sourceRange(n.HeaderRange, *sm)
 	for i := range n.Fields {
 		n.Fields[i].Range = sourceRange(n.Fields[i].Range, *sm)
 	}
@@ -153,6 +188,15 @@ func mapNote(n *model.Note, sm *normalize.SourceMap) {
 	}
 	for i := range n.ExtDirs {
 		n.ExtDirs[i].Range = sourceRange(n.ExtDirs[i].Range, *sm)
+	}
+	for i := range n.TagRanges {
+		n.TagRanges[i] = sourceRange(n.TagRanges[i], *sm)
+	}
+	for i := range n.AuthorLocs {
+		n.AuthorLocs[i] = sourceRange(n.AuthorLocs[i], *sm)
+	}
+	for i := range n.DirectiveRanges {
+		n.DirectiveRanges[i] = sourceRange(n.DirectiveRanges[i], *sm)
 	}
 }
 
