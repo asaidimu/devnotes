@@ -1,3 +1,17 @@
+# [0.3.0](https://github.com/asaidimu/devnotes/compare/v0.2.0...v0.3.0) (2026-11-01)
+
+
+### Bug Fixes
+
+* **engine:** clean diagnostics, severity table, parse recovery, token ranges ([f9f8866](https://github.com/asaidimu/devnotes/commit/f9f886625ecedeb3d52f92b43f79b58ff1e581eb))
+
+
+### Features
+
+* **lsp:** implement DevNotes LSP Feature Spec v1.0 (LSP-3) ([c9d85e5](https://github.com/asaidimu/devnotes/commit/c9d85e5e1f977b08c05b2ba0cc5407feeef4747e))
+* **nvim:** reference LSP client per spec section 14 ([24990e6](https://github.com/asaidimu/devnotes/commit/24990e633496c403d4ddc8ba214135b3364501a4))
+* **nvim:** symbol window and Telescope integration ([fc0f99f](https://github.com/asaidimu/devnotes/commit/fc0f99ff39763d5f5984f0c5be8028ce589a9839))
+
 # [0.3.1](https://github.com/asaidimu/devnotes/compare/v0.3.0...v0.3.1) (2026-11-01)
 
 
