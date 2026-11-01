@@ -117,12 +117,59 @@ just installing it) and adds the reviewer surface:
 - `<C-p>` — floating preview of the note or reference under the cursor
 - `<leader>dca` — DevNotes-only code actions (status/priority/assign/format)
 - `:DevNotesList`, `:DevNotesListIssues`, `:DevNotesListTodos` — pickers over
-  `devnotes.list` (vim.ui.select, or `:Telescope devnotes list` with the
+  `devnotes.list` (vim.ui.select, or `:Telescope devnotes notes` with the
   Telescope extension)
+- `:DevNotesSymbols` — the symbol window: a dedicated notes outline of the
+  whole workspace (see below)
 - `:DevNotesNext` / `:DevNotesPrev` — cycle notes in the file
 - `:DevNotesFormat` — explicit canonical formatting (never on save)
 - `require('devnotes.statusline').component()` — current note's
   `category · status · priority` for your statusline
+
+#### Symbol window
+
+`:DevNotesSymbols` opens a persistent notes window — every note in the
+workspace, grouped and syntax-highlighted, backed by `devnotes.list`. Open it
+as a floating window or docked to any side with a command argument
+(`:DevNotesSymbols left|right|top|bottom|float`; `:DevNotesSymbolsToggle` /
+`:DevNotesSymbolsClose` also exist). In the window:
+
+- `<CR>` — jump to the note (floats close, splits stay open)
+- `p` / `K` — floating preview of the note body and metadata
+- `r` — refresh; `q` — close
+- the list auto-refreshes on entering the window and after any `BufWritePost`
+
+Default layout is a centered float; make it a docked outline via setup:
+
+```lua
+require('devnotes').setup({
+  symbols = {
+    style = 'left',        -- 'float' (default) | 'left' | 'right' | 'top' | 'bottom'
+    width = 56,            -- columns for vertical splits / float width
+    height = 24,           -- rows for horizontal splits / float height
+    group_by = 'category', -- 'category' | 'file' | 'none'
+    sort = 'default',      -- passed through to devnotes.list
+    show_resolved = true,  -- include resolved/deprecated notes
+  },
+})
+```
+
+#### Telescope
+
+When telescope.nvim is installed the extension registers automatically
+(`require('telescope').load_extension('devnotes')`; lazy-loaded setups get it
+on the first `:DevNotesTelescope` call):
+
+- `:Telescope devnotes notes` — all open notes (aliases: `list`)
+- `:Telescope devnotes issues` — open issues (alias: `list_issues`)
+- `:Telescope devnotes todos` — todos (alias: `list_todos`)
+- `:Telescope devnotes references` — notes referencing the `#id` under the cursor
+- `:Telescope devnotes symbols` — every note including resolved/deprecated
+
+Each picker fuzzy-matches id/title/tags/path, shows the note body in the
+preview pane and jumps to the note on `<CR>`. `:DevNotesTelescope
+notes|issues|todos|references|symbols` is an equivalent dispatcher that works
+even when telescope itself is lazy-loaded.
 
 IDs are a tooling concern (unique + stable), titles are for humans — so the
 `note` snippets auto-generate a short random UID for the `#id` slot.
@@ -147,10 +194,11 @@ file:
 ```
 grammar.js / src/ / queries/   tree-sitter grammar + highlight queries
 lua/ plugin/ ftdetect/         Neovim integration (F3 in-comment highlighting,
-                               LSP reference client in lua/devnotes/lsp.lua)
+                               LSP reference client in lua/devnotes/lsp.lua,
+                               symbol window in lua/devnotes/symbols.lua)
 snippets/                      per-filetype LuaSnip wrappers (devnotes + host
                                filetypes: go, typescript, javascript, ...)
-telescope/                     Telescope extension for the devnotes.list
+lua/telescope/_extensions/     Telescope extension for the devnotes.list
                                pickers (optional; vim.ui.select is the fallback)
 bindings/go/                   Go binding for the devnotes grammar
 engine/                        Go engine: normalize, model, validate, pipeline,

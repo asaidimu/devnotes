@@ -125,27 +125,44 @@ function M.list_references(id)
   return M.pick({ reference = id }, 'DevNotes: references to ' .. id)
 end
 
----Return the note ID token under the cursor, if any (uses documentSymbol).
+---Return the note ID token under the cursor, if any. Synchronous text scan:
+---a `#word` match containing the cursor, else the first `#word` on the line,
+---else the cursor word.
 function M.id_under_cursor()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
-  local found = nil
-  vim.lsp.buf_request_all(bufnr, 'textDocument/documentSymbol', { textDocument = vim.lsp.util.make_text_document_params() }, function(results)
-    for _, res in pairs(results) do
-      for _, sym in ipairs(res.result or {}) do
-        local r = sym.selectionRange or sym.range or {}
-        if row >= (r.start or {}).line and row <= (r['end'] or {}).line then
-          found = sym.name:match('^%S+')
-        end
-      end
+  local line = vim.api.nvim_get_current_line()
+  local col = vim.api.nvim_win_get_cursor(0)[2] -- 0-based byte index
+  local start = 1
+  while true do
+    local s, e = line:find('#[%w%-_]+', start)
+    if not s then break end
+    if col >= s - 1 and col <= e then
+      return line:sub(s, e)
     end
-  end)
-  -- buf_request_all is async; fall back to a text-based scan of the line.
-  if not found then
-    local line = vim.api.nvim_get_current_line()
-    found = line:match('#[%w%-_]+') or ''
+    start = e + 1
   end
-  return found
+  local anywhere = line:match('#[%w%-_]+')
+  if anywhere then return anywhere end
+  local word = vim.fn.expand('<cword>')
+  if word and word ~= '' then
+    if word:sub(1, 1) == '#' then return word end
+    return '#' .. word
+  end
+  return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Symbol window (lua/devnotes/symbols.lua)
+-- ---------------------------------------------------------------------------
+
+---Open/toggle the DevNotes symbol window. See lua/devnotes/symbols.lua for
+---layout options; :DevNotesSymbols[ left|right|top|bottom|float] is the
+---command surface.
+function M.symbols(style)
+  local symbols = require('devnotes.symbols')
+  if style then
+    return symbols.open(style)
+  end
+  return symbols.toggle()
 end
 
 -- ---------------------------------------------------------------------------

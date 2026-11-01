@@ -1,3 +1,30 @@
+# [0.3.1](https://github.com/asaidimu/devnotes/compare/v0.3.0...v0.3.1) (2026-11-01)
+
+
+### Features
+
+* **nvim:** symbol window — `:DevNotesSymbols[ left|right|top|bottom|float]`
+  (+ Toggle/Close) opens a dedicated workspace-wide notes outline backed by
+  `devnotes.list`: grouped by category or file, extmark-highlighted
+  status/priority/category glyphs, `<CR>` jump, `p`/`K` body preview, `r`
+  refresh, auto-refresh on enter/save; layout configurable via
+  `require('devnotes').setup{ symbols = {...} }`
+* **nvim:** Telescope extension moved to `lua/telescope/_extensions/devnotes.lua`
+  so `require('telescope').load_extension('devnotes')` resolves on the
+  runtimepath (the previous `telescope/devnotes.lua` location was unreachable
+  by telescope); adds `references` (ID under cursor) and `symbols` (all
+  statuses) pickers, note-body preview pane, and auto-registration; legacy
+  `list`/`list_issues`/`list_todos` names kept as aliases
+* **nvim:** `:DevNotesReferences` command and `:DevNotesTelescope
+  notes|issues|todos|references|symbols` dispatcher that works with
+  lazy-loaded telescope
+
+### Bug Fixes
+
+* **nvim:** `id_under_cursor()` no longer relies on an async documentSymbol
+  request whose result never reached the caller; it is now a synchronous
+  cursor-aware text scan
+
 # [0.3.0](https://github.com/asaidimu/devnotes/compare/v0.2.0...v0.3.0) (2026-10-31)
 
 

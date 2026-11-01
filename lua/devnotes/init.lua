@@ -18,7 +18,7 @@ local function default_path()
   return vim.fn.fnamemodify(p, ':h:h:h')
 end
 
-local opts = { path = default_path(), load_snippets = true }
+local opts = { path = default_path(), load_snippets = true, lsp = true, symbols = {} }
 
 local HOST_FILETYPES = {
   go = true,
@@ -87,6 +87,55 @@ function M.setup(user)
       local lsp = require('devnotes.lsp')
       lsp.setup_attach()
       lsp.enable()
+
+      -- 5a. Symbol window (lua/devnotes/symbols.lua): a dedicated notes
+      --     outline backed by devnotes.list, configurable via opts.symbols.
+      require('devnotes.symbols').setup(opts.symbols)
+      vim.api.nvim_create_user_command('DevNotesSymbols', function(e)
+        require('devnotes.symbols').open(e.args ~= '' and e.args or nil)
+      end, {
+        nargs = '?',
+        desc = 'DevNotes: open the symbol window (float|left|right|top|bottom)',
+        complete = function() return { 'float', 'left', 'right', 'top', 'bottom' } end,
+      })
+      vim.api.nvim_create_user_command('DevNotesSymbolsToggle', function()
+        require('devnotes.symbols').toggle()
+      end, { desc = 'DevNotes: toggle the symbol window' })
+      vim.api.nvim_create_user_command('DevNotesSymbolsClose', function()
+        require('devnotes.symbols').close()
+      end, { desc = 'DevNotes: close the symbol window' })
+      vim.api.nvim_create_user_command('DevNotesReferences', function()
+        lsp.list_references()
+      end, { desc = 'DevNotes: browse references to the note ID under the cursor' })
+
+      -- 5b. Telescope dispatcher: :DevNotesTelescope [notes|issues|todos|
+      --     references|symbols]. The extension itself auto-registers below;
+      --     this command also works when telescope is lazy-loaded later.
+      vim.api.nvim_create_user_command('DevNotesTelescope', function(e)
+        local ok, tel = pcall(require, 'telescope')
+        if not ok then
+          vim.notify('devnotes: telescope.nvim not installed', vim.log.levels.WARN)
+          return
+        end
+        pcall(function() tel.load_extension('devnotes') end)
+        local ext = tel.extensions and tel.extensions.devnotes
+        local name = e.args ~= '' and e.args or 'notes'
+        if ext and ext[name] then
+          ext[name]()
+        else
+          vim.notify('devnotes: unknown telescope picker "' .. name .. '"'
+            .. ' (notes|issues|todos|references|symbols)', vim.log.levels.WARN)
+        end
+      end, {
+        nargs = '?',
+        desc = 'DevNotes: open a Telescope picker',
+        complete = function() return { 'notes', 'issues', 'todos', 'references', 'symbols' } end,
+      })
+      -- Auto-register the extension when telescope is already loaded; lazy
+      -- setups load it on first :DevNotesTelescope call instead.
+      pcall(function()
+        require('telescope').load_extension('devnotes')
+      end)
 
       vim.api.nvim_create_user_command('DevNotesList', function()
         lsp.list()
