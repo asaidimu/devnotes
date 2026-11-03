@@ -15,9 +15,13 @@ Minimal note (SPEC 48)
     (separator_line)))
 
 ==================
-Full header, all core fields (SPEC 10/49)
+Full metadata via directives (SPEC 10/49)
 ==================
-@note #pool-ownership issue open P1 2026-08-10T16:29+03:00 #pooling,#memory : Nested documents can outlive their parent pool
+@note #pool-ownership issue : Nested documents can outlive their parent pool
+@status open
+@priority high
+@created 2026-08-10T16:29+03:00
+@tags #pooling #memory
 
 
 ---
@@ -27,25 +31,37 @@ Full header, all core fields (SPEC 10/49)
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
-      (header_field
-        (priority))
-      (header_field
-        (timestamp))
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
     (separator_line)))
 
 ==================
 Equivalent metadata orderings (SPEC 10)
 ==================
-@note #x issue P1 open 2026-08-10 #security,#input : Possible XSS
+@note #x issue : Possible XSS
+@priority high
+@status open
+@created 2026-08-10
+@tags #security #input
 
-@note #x issue open #security,#input P1 2026-08-10 : Possible XSS
+@note #y issue : Possible XSS
+@status open
+@tags #security #input
+@priority high
+@created 2026-08-10
 
 
 ---
@@ -55,45 +71,57 @@ Equivalent metadata orderings (SPEC 10)
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
-      (header_field
-        (status))
-      (header_field
-        (timestamp))
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)))
-      (header_field
-        (priority))
-      (header_field
-        (timestamp))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
     (separator_line)))
 
 ==================
 All core statuses (SPEC 11)
 ==================
-@note #s1 issue open : a
+@note #s1 issue : a
+@status open
 
-@note #s2 issue resolved : b
+@note #s2 issue : b
+@status resolved
 
-@note #s3 issue wontfix : c
+@note #s3 issue : c
+@status wontfix
 
-@note #s4 issue deprecated : d
+@note #s4 issue : d
+@status deprecated
 
 
 ---
@@ -103,45 +131,53 @@ All core statuses (SPEC 11)
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
     (separator_line)))
 
 ==================
 All core priorities (SPEC 12)
 ==================
-@note #p0 issue P0 : a
+@note #p0 issue : a
+@priority critical
 
-@note #p1 issue P1 : b
+@note #p1 issue : b
+@priority high
 
-@note #p2 issue P2 : c
+@note #p2 issue : c
+@priority medium
 
-@note #p3 issue P3 : d
+@note #p3 issue : d
+@priority low
 
 
 ---
@@ -151,47 +187,88 @@ All core priorities (SPEC 12)
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (separator_line)))
+
+==================
+Legacy priority aliases still parse (SPEC 12)
+==================
+@note #p0 issue : a
+@priority P0
+
+@note #p1 issue : b
+@priority P1
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
     (separator_line)))
 
 ==================
 Timestamp variants (SPEC 13)
 ==================
-@note #t1 issue 2026-08-10 : a
+@note #t1 issue : a
+@created 2026-08-10
 
-@note #t2 issue 2026-08-10T16:29 : b
+@note #t2 issue : b
+@created 2026-08-10T16:29
 
-@note #t3 issue 2026-08-10T16:29Z : c
+@note #t3 issue : c
+@created 2026-08-10T16:29Z
 
-@note #t4 issue 2026-08-10T16:29+03:00 : d
+@note #t4 issue : d
+@created 2026-08-10T16:29+03:00
 
-@note #t5 issue 2026-08-10T16:29:45Z : e
+@note #t5 issue : e
+@created 2026-08-10T16:29:45Z
 
 
 ---
@@ -201,49 +278,59 @@ Timestamp variants (SPEC 13)
     (header_line
       (id)
       (category)
-      (header_field
-        (timestamp))
       (title))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (timestamp))
       (title))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (timestamp))
       (title))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (timestamp))
       (title))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (timestamp))
       (title))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
     (separator_line)))
 
 ==================
-Tags, canonical and whitespace-after-comma (SPEC 14)
+Tags with commas and whitespace (SPEC 14)
 ==================
-@note #x issue #pooling,#performance,#memory : a
+@note #x issue : a
+@tags #pooling,#performance,#memory
 
-@note #y issue #pooling, #performance : b
+@note #y issue : b
+@tags #pooling, #performance
+
+@note #z issue : c
+@tags #pooling #performance
 
 
 ---
@@ -253,28 +340,43 @@ Tags, canonical and whitespace-after-comma (SPEC 14)
     (header_line
       (id)
       (category)
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)
-          (tag_name)))
       (title))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name)
+          (tag_name))))
     (separator_line))
   (note_block
     (header_line
       (id)
       (category)
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)))
       (title))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
+    (separator_line))
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
     (separator_line)))
 
 ==================
-Unknown header tokens become extension fields (SPEC 10/27)
+Unknown directive values are preserved for validation (SPEC 10/27)
 ==================
-@note #x issue P5 #cache : Some title
+@note #x issue : Some title
+@priority P5
+@tags #cache
 
 
 ---
@@ -284,12 +386,14 @@ Unknown header tokens become extension fields (SPEC 10/27)
     (header_line
       (id)
       (category)
-      (header_field
-        (extension_field))
-      (header_field
-        (tags
-          (tag_name)))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name))))
     (separator_line)))
 
 ==================

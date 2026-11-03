@@ -111,7 +111,8 @@ See directive with URL (SPEC 18)
 ==================
 Multiple references (SPEC 18/47.5)
 ==================
-@note #storage-design decision #storage,#architecture : Use append-only records
+@note #storage-design decision : Use append-only records
+@tags #storage #architecture
 @author architecture-team
 @see #storage-recovery
 @see #storage-compaction
@@ -124,11 +125,12 @@ Multiple references (SPEC 18/47.5)
     (header_line
       (id)
       (category)
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)))
       (title))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
     (directive_line
       (author_directive
         (author_value)))
@@ -145,7 +147,9 @@ Multiple references (SPEC 18/47.5)
 ==================
 Unknown directives preserved (SPEC 19/47.6)
 ==================
-@note #cache-risk issue P1 #cache : Cache invalidation race
+@note #cache-risk issue : Cache invalidation race
+@priority high
+@tags #cache
 @author jane
 @component cache
 @deadline 2026-12-31
@@ -159,12 +163,14 @@ Unknown directives preserved (SPEC 19/47.6)
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
-      (header_field
-        (tags
-          (tag_name)))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name))))
     (directive_line
       (author_directive
         (author_value)))
@@ -268,3 +274,49 @@ No directives (SPEC 48)
       (category)
       (title))
     (separator_line)))
+
+==================
+Equals-separated directives (compatibility spelling)
+==================
+@note #x issue : T
+@status=open
+@priority=critical
+@tags=#a,#b
+@created=2026-11-02
+@author=jane
+@see=#y
+
+body
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
+    (directive_line
+      (author_directive
+        (author_value)))
+    (directive_line
+      (see_directive
+        (reference
+          (id))))
+    (separator_line)
+    (body_line
+      (body_text))))

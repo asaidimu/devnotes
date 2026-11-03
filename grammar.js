@@ -35,16 +35,14 @@ export default grammar({
     // ------------------------------------------------------------------
     // HEADER
     // ------------------------------------------------------------------
-    // Fields are consumed greedily from the left; a header field can never
-    // begin with ':', so the first WS ":" WS after the category is always
-    // the title delimiter ("first occurrence" semantics, SPEC 7/15/27).
+    // Header carries only identity, category and title. All metadata lives
+    // in directives so values never need positional disambiguation.
     header_line: $ => seq(
       '@note',
       $._ws,
       $.id,
       $._ws,
       $.category,
-      repeat(seq($._ws, $.header_field)),
       $._ws,
       ':',
       $._ws,
@@ -55,41 +53,13 @@ export default grammar({
     id: $ => token(/#[A-Za-z0-9_-]+/),
     category: $ => token(/[A-Za-z][A-Za-z0-9_-]*/),
 
-    header_field: $ => choice(
-      $.status,
-      $.priority,
-      $.timestamp,
-      $.tags,
-      $.extension_field
-    ),
-
-    status: $ => token(prec(PREC.keyword, choice(
-      'open',
-      'resolved',
-      'wontfix',
-      'deprecated'
-    ))),
-
-    priority: $ => token(prec(PREC.keyword, choice(
-      'P0',
-      'P1',
-      'P2',
-      'P3'
-    ))),
-
-    // Loose shape only; strict ISO 8601 validation happens in the semantic layer.
-    timestamp: $ => token(
-      /[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2})?([+-][0-9]{2}:[0-9]{2}|Z)?)?/
-    ),
-
-    tags: $ => seq(
+    // @tags accepts commas or whitespace between tags: "@tags #this #that".
+    tag_list: $ => seq(
       '#',
       $.tag_name,
-      repeat(seq(',', optional($._ws), '#', $.tag_name))
+      repeat(seq(choice(seq(',', optional($._ws)), $._ws), '#', $.tag_name))
     ),
     tag_name: $ => token(/[A-Za-z0-9_-]+/),
-
-    extension_field: $ => token(/[A-Za-z][A-Za-z0-9_-]*/),
 
     title: $ => token(/[^\r\n]+/),
 
@@ -97,15 +67,57 @@ export default grammar({
     // DIRECTIVES
     // ------------------------------------------------------------------
     directive_line: $ => choice(
+      $.status_directive,
+      $.priority_directive,
+      $.tags_directive,
+      $.created_directive,
       $.author_directive,
       $.see_directive,
       $.extension_directive
     ),
 
+    // Values are deliberately unrestricted single tokens: semantic validation
+    // reports INVALID_STATUS / INVALID_PRIORITY / INVALID_TIMESTAMP instead
+    // of the grammar silently reinterpreting a bad value as an extension.
+    status_directive: $ => seq(
+      '@',
+      token(prec(PREC.keyword, 'status')),
+      $._dsep,
+      $.status_value,
+      $._newline
+    ),
+    status_value: $ => token(/[^\r\n \t]+/),
+
+    priority_directive: $ => seq(
+      '@',
+      token(prec(PREC.keyword, 'priority')),
+      $._dsep,
+      $.priority_value,
+      $._newline
+    ),
+    priority_value: $ => token(/[^\r\n \t]+/),
+
+    tags_directive: $ => seq(
+      '@',
+      token(prec(PREC.keyword, 'tags')),
+      $._dsep,
+      $.tag_list,
+      $._newline
+    ),
+
+    created_directive: $ => seq(
+      '@',
+      token(prec(PREC.keyword, choice('created', 'timestamp'))),
+      $._dsep,
+      $.timestamp_value,
+      $._newline
+    ),
+    timestamp_value: $ => token(/[^\r\n \t]+/),
+
     author_directive: $ => seq(
       '@',
       token(prec(PREC.keyword, 'author')),
-      $._ws,
+      $._dsep,
       $.author_value,
       $._newline
     ),
@@ -114,7 +126,7 @@ export default grammar({
     see_directive: $ => seq(
       '@',
       token(prec(PREC.keyword, 'see')),
-      $._ws,
+      $._dsep,
       $.reference,
       $._newline
     ),
@@ -129,7 +141,7 @@ export default grammar({
     extension_directive: $ => seq(
       '@',
       $.directive_name,
-      optional(seq($._ws, $.directive_value)),
+      optional(seq($._dsep, $.directive_value)),
       $._newline
     ),
     directive_name: $ => token(/[A-Za-z0-9_-]+/),
@@ -163,6 +175,13 @@ export default grammar({
     // COMMON
     // ------------------------------------------------------------------
     _ws: $ => /[ \t]+/,
+    // Directives accept both canonical "@status open" and the common
+    // "@status=open" spelling produced by some models. Formatting and
+    // migration rewrite the latter to the canonical space-separated form.
+    _dsep: $ => choice(
+      $._ws,
+      seq(optional($._ws), '=', optional($._ws))
+    ),
     // Single atomic token so CRLF can never be split between lines.
     _newline: $ => token(choice(seq('\r', '\n'), '\n')),
   }

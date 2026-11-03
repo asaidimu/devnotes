@@ -68,7 +68,7 @@ func TestMinimalNoteClean(t *testing.T) {
 }
 
 func TestFullHeaderClean(t *testing.T) {
-	content := "@note #x issue open P1 2026-08-10 #security,#input : Possible XSS\n\n"
+	content := "@note #x issue : Possible XSS\n@status open\n@priority high\n@created 2026-08-10\n@tags #security #input\n\n"
 	ds := validateContent(t, content)
 	if len(ds) != 0 {
 		t.Fatalf("expected no diagnostics, got %v", codes(ds))
@@ -76,14 +76,14 @@ func TestFullHeaderClean(t *testing.T) {
 }
 
 func TestDuplicatePriority(t *testing.T) {
-	ds := validateContent(t, "@note #x issue P1 P2 : Something\n\n")
+	ds := validateContent(t, "@note #x issue : Something\n@priority high\n@priority low\n\n")
 	if !has(ds, "DUPLICATE_FIELD") {
 		t.Fatalf("expected DUPLICATE_FIELD, got %v", codes(ds))
 	}
 }
 
 func TestDuplicateStatus(t *testing.T) {
-	ds := validateContent(t, "@note #x issue open resolved : Something\n\n")
+	ds := validateContent(t, "@note #x issue : Something\n@status open\n@status resolved\n\n")
 	if !has(ds, "DUPLICATE_FIELD") {
 		t.Fatalf("expected DUPLICATE_FIELD, got %v", codes(ds))
 	}
@@ -97,9 +97,46 @@ func TestMissingTitle(t *testing.T) {
 }
 
 func TestInvalidTimestampValue(t *testing.T) {
-	ds := validateContent(t, "@note #x observation 2026-13-45 : T\n\n")
+	ds := validateContent(t, "@note #x observation : T\n@created 2026-13-45\n\n")
 	if !has(ds, "INVALID_TIMESTAMP") {
 		t.Fatalf("expected INVALID_TIMESTAMP, got %v", codes(ds))
+	}
+}
+
+func TestEqualsDirectivesClean(t *testing.T) {
+	notes := mustNotes(t, "@note #x issue : T\n@status=open\n@priority=critical\n@tags=#a,#b\n@created=2026-08-10\n\n")
+	if len(notes) != 1 {
+		t.Fatalf("expected one note, got %d", len(notes))
+	}
+	n := notes[0]
+	if n.Status != "open" || !n.HasStatus {
+		t.Fatalf("status=open was not parsed: %+v", n)
+	}
+	if n.Priority != "critical" || !n.HasPri {
+		t.Fatalf("priority=critical was not parsed: %+v", n)
+	}
+	if len(n.Tags) != 2 || n.Tags[0] != "a" || n.Tags[1] != "b" {
+		t.Fatalf("tags were not parsed: %+v", n.Tags)
+	}
+	if n.Timestamp != "2026-08-10" || !n.HasTs {
+		t.Fatalf("created=... was not parsed: %+v", n)
+	}
+	ds := validateContent(t, "@note #x issue : T\n@status=open\n@priority=critical\n@tags=#a,#b\n@created=2026-08-10\n\n")
+	if len(ds) != 0 {
+		t.Fatalf("expected no diagnostics, got %v", codes(ds))
+	}
+}
+func TestInvalidStatusAndPriority(t *testing.T) {
+	ds := validateContent(t, "@note #x issue : T\n@status closed\n@priority P4\n\n")
+	if !has(ds, "INVALID_STATUS") || !has(ds, "INVALID_PRIORITY") {
+		t.Fatalf("expected INVALID_STATUS and INVALID_PRIORITY, got %v", codes(ds))
+	}
+}
+
+func TestLegacyPriorityAlias(t *testing.T) {
+	ds := validateContent(t, "@note #x issue : T\n@priority P1\n\n")
+	if len(ds) != 0 {
+		t.Fatalf("expected no diagnostics, got %v", codes(ds))
 	}
 }
 

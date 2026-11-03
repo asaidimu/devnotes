@@ -80,7 +80,8 @@ Escaped @note in body (SPEC 24)
 ==================
 Empty body (SPEC 25)
 ==================
-@note #remove-api todo P1 : Remove deprecated API
+@note #remove-api todo : Remove deprecated API
+@priority high
 
 
 ---
@@ -90,9 +91,10 @@ Empty body (SPEC 25)
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
     (separator_line)))
 
 ==================

@@ -3,7 +3,8 @@ Multiple notes in one file (SPEC 4.2)
 ==================
 @note #a observation : first
 
-@note #b todo P1 : second
+@note #b todo : second
+@priority high
 
 
 ---
@@ -19,15 +20,20 @@ Multiple notes in one file (SPEC 4.2)
     (header_line
       (id)
       (category)
-      (header_field
-        (priority))
       (title))
+    (directive_line
+      (priority_directive
+        (priority_value)))
     (separator_line)))
 
 ==================
 Canonical full note (SPEC 49)
 ==================
-@note #pool-ownership issue open P1 2026-08-10T16:29+03:00 #pooling,#memory : Nested documents can outlive their parent pool
+@note #pool-ownership issue : Nested documents can outlive their parent pool
+@status open
+@priority high
+@created 2026-08-10T16:29+03:00
+@tags #pooling #memory
 @author ai-code-reviewer-v2
 @see #document-lifecycle
 @see #allocator-ownership
@@ -49,17 +55,21 @@ nested documents.
     (header_line
       (id)
       (category)
-      (header_field
-        (status))
-      (header_field
-        (priority))
-      (header_field
-        (timestamp))
-      (header_field
-        (tags
-          (tag_name)
-          (tag_name)))
       (title))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (directive_line
+      (created_directive
+        (timestamp_value)))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
     (directive_line
       (author_directive
         (author_value)))

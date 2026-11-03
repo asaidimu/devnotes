@@ -36,6 +36,12 @@ end
 
 local function run_filter(opts, filter, title)
   opts = opts or {}
+  filter = filter or {}
+  if next(filter) == nil then
+    -- Lua encodes an empty table as [] over JSON-RPC; the server expects an
+    -- object, so use vim.empty_dict() to force {}.
+    filter = vim.empty_dict()
+  end
   local params = { command = 'devnotes.list', arguments = { { filter = filter, sort = opts.sort or 'default', includeBody = true } } }
   vim.lsp.buf_request(0, 'workspace/executeCommand', params, function(err, result)
     if err or not result or not result.items then

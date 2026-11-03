@@ -46,7 +46,7 @@ separator line in particular is a real trap, covered below.
 ### Header line
 
 ```
-@note #<id> <category> [field field ...] : <title>
+@note #<id> <category> : <title>
 ```
 
 - `#<id>` — `#` followed by letters/digits/`_`/`-`. Referenced elsewhere with
@@ -54,33 +54,53 @@ separator line in particular is a real trap, covered below.
 - `<category>` — `observation`, `todo`, `issue`, `context`, `lesson`,
   `prompt`, or any custom identifier (custom categories parse fine but get a
   `warning`-level `UNKNOWN_CATEGORY` diagnostic from `devnotes check`).
-- Zero or more fields, in **any order**: `status` (`open`/`resolved`/
-  `wontfix`/`deprecated`, default `open`), `priority` (`P0`–`P3`),
-  `timestamp` (loose ISO 8601 shape, e.g. `2026-08-20` or
-  `2026-08-20T14:30:00Z`), `tags` (`#tag1,#tag2`, comma-separated, each
-  prefixed with `#`). Repeating the same field kind twice (e.g. two
-  priorities) is a `DUPLICATE_FIELD` error.
 - `: <title>` — **the first literal ` : ` (space-colon-space) after the
-  category ends the field list and starts the title.** Everything after
-  that, including further colons, is title text:
+  category starts the title.** Everything after that, including further
+  colons, is title text:
   ```
   @note #x observation : Why A : B is necessary
   ```
   title is `Why A : B is necessary`, not `Why A`. An empty title is a
   `MISSING_TITLE` error.
 
+The header carries identity and category only. Status, priority, timestamps,
+tags, authors, and references are **directive lines immediately after the
+header**, one value per line:
+
+```
+@status open                    # open | resolved | wontfix | deprecated
+@priority high                  # critical | high | medium | low
+@tags #pooling #memory          # space- or comma-separated
+@created 2026-08-20             # ISO 8601; @timestamp is an alias
+@author jane
+@see #other-id                  # or a bare URL
+@name value                     # custom directive
+```
+
+- Status defaults to `open` when omitted.
+- Canonical priorities are `critical` (P0), `high` (P1), `medium` (P2), and
+  `low` (P3). The legacy aliases `P0`–`P3` are accepted in `@priority` for
+  migration, but tools emit the words. Priority is optional.
+- Repeating a core directive (`@status`, `@priority`, `@tags`, `@created`)
+  is a `DUPLICATE_FIELD` error.
+- Directive order is not enforced, but canonical formatting emits
+  `@status`, `@priority`, `@tags`, `@created`, then authors/references.
+- Some generators write `=` instead of a space (`@status=open`,
+  `@tags=#a,#b`). That parses and is normalized to the canonical form; do not
+  rewrite those lines by hand.
+
 ### Directive lines — and the ordering rule that silently reclassifies text
 
 ```
-@see #other-id        (or a bare URL, or free text)
+@see #other-id        (or a bare URL)
 @author name
 @name value            (custom directive — preserved, flagged UNKNOWN_DIRECTIVE at info level)
 ```
 
 **Directives are only recognized in the block right after the header, before
-any body text.** Once a body line has appeared, a later `@see` or `@author`
-line is *not* parsed as a directive — it's just body text starting with `@`.
-This isn't a bug, it's the grammar (`note_block` is `header_line,
+any body text.** Once a body line has appeared, a later `@see`, `@author`, or
+`@status` line is *not* parsed as a directive — it's just body text starting
+with `@`. This isn't a bug, it's the grammar (`note_block` is `header_line,
 directive_line*, separator_line, body_line*` — directives can't appear after
 the separator). Practical effect: if `devnotes trace <id>` isn't finding a
 reference you can plainly see in the comment, check whether the `@see` line
@@ -88,66 +108,18 @@ comes before or after the free-text body. `devnotes check` does **not** flag
 this — a misplaced directive is still grammatically valid body text, so
 nothing looks wrong to the validator.
 
-### The separator line — the important one
-
-The grammar requires **one blank comment line** between the last
-header/directive line and the first body line, whenever there *is* body
-text. This was verified directly against the parser, not assumed from the
-spec prose:
-
-```
-// @note #x observation : Missing the separator
-// This line vanishes. No error, no warning, nothing.
-```
-parses with `body = ""` — the text is silently discarded. Compare:
-```
-// @note #x observation : With the separator
-//
-// This line survives.
-```
-which correctly parses `body = "This line survives."`. **There is no
-diagnostic for a missing separator** — `devnotes check` reports nothing
-wrong, and the note simply loses body content. This is the single most
-important rule in this document: if you are writing a `@note` comment with
-free-text body content by hand, in any language, always leave one blank
-comment line (just the bare marker, e.g. `//` or `#` with nothing after it)
-between the metadata block and the body.
-
-`devnotes note add --body=...` and `devnotes note resolve --body=...`
-already handle this correctly — they insert the separator for you. This
-matters mainly when writing `@note` comments by hand instead of through the
-CLI, or when reviewing someone else's hand-written note.
-
-### Body lines
-
-Free text, byte-for-byte preserved apart from the comment marker. One
-escape rule: a bare `@note` line (just the literal word, nothing after it)
-inside a body is treated as literal text, not a new note header — because a
-real header always requires `@note` followed by whitespace and an `#id`. So
-`// @note` alone in a body is safe; `// @note #new-id ...` is not — it
-starts a new note block.
-
-**A second `@note #id ...` header placed immediately after the first note's
-directives (no separator, no body in between) does not reliably start a new
-note** — depending on exact positioning it can instead be misparsed as an
-unknown extension directive of the *first* note. Always separate distinct
-notes in the same comment block with either a blank line or by simply
-letting the previous note's body/directives end naturally before the next
-`@note` begins on its own line with nothing ambiguous before it. In
-practice: don't write two `@note` headers on directly adjacent comment
-lines with no body/blank line between them.
-
 ### Diagnostics (`devnotes check`)
 
 | Code | Severity | Meaning |
 |---|---|---|
 | `MISSING_TITLE` | error | title is empty after the delimiter |
-| `INVALID_STATUS` | error | status token isn't one of the four valid values |
-| `INVALID_TIMESTAMP` | error | timestamp doesn't parse as the expected shape |
-| `DUPLICATE_FIELD` | error | same field kind (status/priority/timestamp/tags) given twice |
+| `INVALID_STATUS` | error | `@status` value isn't one of the four valid values |
+| `INVALID_TIMESTAMP` | error | `@created`/`@timestamp` value doesn't parse as the expected shape |
+| `DUPLICATE_FIELD` | error | same core directive (status/priority/tags/created) given twice |
 | `DUPLICATE_ID` | error | same `#id` used by more than one note in the workspace |
 | `UNKNOWN_CATEGORY` | warning | category isn't one of the built-in set |
 | `UNRESOLVED_REFERENCE` | warning | `@see #id` points at an ID that doesn't exist anywhere |
+| `INVALID_PRIORITY` | error | `@priority` value isn't a canonical word or `P0`–`P3` alias |
 | `UNKNOWN_DIRECTIVE` | info | a custom `@name value` directive (e.g. `@assignee`) — expected and harmless, just informational |
 
 Note what's *not* in this table: there is no code for a misplaced directive
@@ -174,7 +146,7 @@ literal — do that, then retry.
 ```
 devnotes list                                   # everything
 devnotes list --category=todo --status=open
-devnotes list --priority=P0 --assignee=alice
+devnotes list --priority=critical --assignee=alice
 devnotes list --group-by=status                 # or category|priority|assignee
 devnotes show <id>                              # full detail: body, refs, extensions, location
 devnotes trace <id> --direction=out             # what this note references
@@ -197,7 +169,7 @@ is already built, filtering is instant, and you get structured fields
 
 ```
 devnotes note add <file> --category=todo --title="..." \
-  [--line=N] [--priority=P1] [--status=open] [--tags=a,b] \
+  [--line=N] [--priority=high] [--status=open] [--tags=a,b] \
   [--body="..."] [--author=name] [--see=#other-id,...] [--id=custom-id]
 ```
 
@@ -213,7 +185,7 @@ devnotes note add <file> --category=todo --title="..." \
 devnotes note claim <id> --assignee=name       # writes @assignee into source
 devnotes note resolve <id> [--body="closing note"]
 devnotes note status <id> <open|resolved|wontfix|deprecated>
-devnotes note priority <id> <P0|P1|P2|P3>
+devnotes note priority <id> <critical|high|medium|low>   # P0-P3 also accepted
 ```
 
 All four mutation commands look up which file the note lives in via the
@@ -239,7 +211,7 @@ when done.
 supplied (no interactive prompts, so it's script-safe), then `devnotes check
 .` as the actual gate — `check` is the validation command (diagnostics table
 above), separate from indexing. A CI job typically runs both: `check` to
-fail the build on malformed notes, `list --status=open --priority=P0 --json`
+fail the build on malformed notes, `list --status=open --priority=critical --json`
 to fail the build on unresolved criticals.
 
 **Getting a PM-style view**: `devnotes report --by=status` or `--by=assignee`
@@ -268,6 +240,7 @@ concept, claiming a note *is* assigning it.
 | Command | Reads/writes | Purpose |
 |---|---|---|
 | `check [paths...]` | source only | diagnostics (see table above) |
+| `migrate [paths...]` | writes source | rewrite legacy positional headers to directives (`--dry-run` to preview) |
 | `index init` | writes index | full workspace scan |
 | `index update [paths...]` | source → index | incremental re-sync, hash-diffed |
 | `index status` | reads both | stale/missing/untracked files |
@@ -275,7 +248,7 @@ concept, claiming a note *is* assigning it.
 | `note claim <id>` | writes source, then index | set `@assignee` |
 | `note resolve <id>` | writes source, then index | status → resolved, optional closing body |
 | `note status <id> <status>` | writes source, then index | any lifecycle transition |
-| `note priority <id> <P0-3>` | writes source, then index | reprioritize |
+| `note priority <id> <critical|high|medium|low>` | writes source, then index | reprioritize (`P0`-`P3` accepted) |
 | `list` | reads index | filtered listing |
 | `show <id>` | reads index | full detail on one note |
 | `trace <id>` | reads index | walk the `@see` graph |

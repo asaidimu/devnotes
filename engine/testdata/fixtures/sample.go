@@ -9,7 +9,11 @@ func Acquire(p *Pool) *Block { return p.Take() }
 // The pool must be returned after every acquire, even on error paths.
 func Release(p *Pool) { p.Drain() }
 
-// @note #pool-release todo P1 open P2 #go,#alloc #pool : Re-acquire loop is inconsistent
+// @note #pool-release todo : Re-acquire loop is inconsistent
+// @status open
+// @priority high
+// @priority medium
+// @tags #go #alloc #pool
 //
 // Re-check the acquire loop for missing releases under early return.
 func ReAcquire(p *Pool) { p.Retake() }
@@ -20,7 +24,8 @@ func ReAcquire(p *Pool) { p.Retake() }
 // bodyless note with no title.
 func Debug(p *Pool) {}
 
-// @note #memory-pool observation P1 : Track outstanding allocations in a counter
+// @note #memory-pool observation : Track outstanding allocations in a counter
+// @priority high
 //
 // Whenever the counter hits zero the pool can be trimmed.
 func Trim(p *Pool) { p.Compact() }

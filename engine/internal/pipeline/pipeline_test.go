@@ -18,11 +18,11 @@ func hasCode(ds []validate.WSDiag, code string) bool {
 
 func TestEnsureTerminator(t *testing.T) {
 	cases := map[string]string{
-		"@note #a observation : T\n\n":           "@note #a observation : T\n\n",
-		"@note #a observation : T\n":             "@note #a observation : T\n\n",
-		"@note #a observation : T":               "@note #a observation : T\n\n",
-		"@note #a observation : T\n\nbody\n":     "@note #a observation : T\n\nbody\n\n",
-		"@note #a observation : T\n\nbody\n\n":   "@note #a observation : T\n\nbody\n\n",
+		"@note #a observation : T\n\n":         "@note #a observation : T\n\n",
+		"@note #a observation : T\n":           "@note #a observation : T\n\n",
+		"@note #a observation : T":             "@note #a observation : T\n\n",
+		"@note #a observation : T\n\nbody\n":   "@note #a observation : T\n\nbody\n\n",
+		"@note #a observation : T\n\nbody\n\n": "@note #a observation : T\n\nbody\n\n",
 	}
 	for in, want := range cases {
 		if got := ensureTerminator(in); got != want {
@@ -89,6 +89,58 @@ func TestCheckFileGoBlockComment(t *testing.T) {
 	r := res.NoteLocs[0].Note.Range
 	if r.StartLine != 3 || r.StartCol != 3 {
 		t.Fatalf("range %+v, want start 3,3", r)
+	}
+}
+
+func TestCheckFileGoIgnoresOrdinaryComments(t *testing.T) {
+	src := "package p\n\n" +
+		"// This is just a normal comment.\n" +
+		"func F() {}\n\n" +
+		"// TODO: fix this later\n" +
+		"// another line\n" +
+		"func G() {}\n"
+	res, err := CheckFile("a.go", ".go", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.NoteLocs) != 0 {
+		t.Fatalf("want no notes, got %+v", res.NoteLocs)
+	}
+	if len(res.Diags) != 0 {
+		t.Fatalf("want no diagnostics, got %+v", res.Diags)
+	}
+}
+
+func TestCheckFileGoSkipsProseBeforeNote(t *testing.T) {
+	src := "package p\n\n" +
+		"// Explanation about this function.\n" +
+		"// @note #mix todo : A note after prose\n" +
+		"//\n" +
+		"// body\n" +
+		"func F() {}\n"
+	res, err := CheckFile("a.go", ".go", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.NoteLocs) != 1 {
+		t.Fatalf("want 1 note, got %d", len(res.NoteLocs))
+	}
+	if len(res.Diags) != 0 {
+		t.Fatalf("want no diagnostics, got %+v", res.Diags)
+	}
+	n := res.NoteLocs[0].Note
+	if n.Range.StartLine != 3 || n.Range.StartCol != 3 {
+		t.Fatalf("range %+v, want start 3,3", n.Range)
+	}
+}
+
+func TestCheckFileDNStillReportsStrayText(t *testing.T) {
+	res, err := CheckFile("a.dn", ".dn", []byte("not a note\n\n@note #x observation : T\n\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasPipe(&res, "INVALID_HEADER") {
+		t.Fatalf("expected INVALID_HEADER for stray text, got %+v", res.Diags)
 	}
 }
 

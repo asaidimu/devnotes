@@ -314,6 +314,12 @@ func noteWithRange(site refSite) model.Note {
 // ---------------------------------------------------------------------------
 
 func (s *server) documentSymbols(uri string) []map[string]interface{} {
+	// Note symbols belong to the dedicated DevNotes view. Returning them for
+	// host files would merge them into the language server's outline (gopls,
+	// tsserver, ...), so host files deliberately contribute no symbols here.
+	if pipeline.Lang(filepath.Ext(uriToPath(uri))) != "dn" {
+		return nil
+	}
 	d := s.docs[uri]
 	if d == nil || d.res == nil {
 		return nil
@@ -338,6 +344,13 @@ func (s *server) workspaceSymbols(query string) []map[string]interface{} {
 	q := strings.ToLower(strings.TrimPrefix(query, "#"))
 	var out []map[string]interface{}
 	for _, e := range entries {
+		// Only standalone DevNotes files contribute workspace symbols, so a
+		// note written inside a Go/TS comment never shadows a real code
+		// symbol from another language server. Host notes remain available
+		// through devnotes.list / :DevNotesSymbols.
+		if pipeline.Lang(filepath.Ext(uriToPath(e.URI))) != "dn" {
+			continue
+		}
 		n := e.N()
 		if q != "" && !strings.Contains(strings.ToLower(strings.TrimPrefix(n.ID, "#")), q) {
 			continue
@@ -548,7 +561,7 @@ func (s *server) inlayHints(uri string, startL, endL uint) []map[string]interfac
 		}
 		parts = append(parts, st)
 		if n.Priority != "" {
-			parts = append(parts, n.Priority)
+			parts = append(parts, model.PriorityLabel(n.Priority))
 		}
 		if c := counts[n.ID]; c > 0 {
 			parts = append(parts, itoa(c)+" ref"+plural(c))

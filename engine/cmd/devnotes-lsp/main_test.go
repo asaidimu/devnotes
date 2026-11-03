@@ -293,6 +293,8 @@ func TestInitializeCapabilities(t *testing.T) {
 				ExecuteCommandProvider struct {
 					Commands []string `json:"commands"`
 				} `json:"executeCommandProvider"`
+				DocumentSymbolProvider  any `json:"documentSymbolProvider"`
+				WorkspaceSymbolProvider any `json:"workspaceSymbolProvider"`
 			} `json:"capabilities"`
 			ServerInfo struct {
 				Name string `json:"name"`
@@ -312,6 +314,9 @@ func TestInitializeCapabilities(t *testing.T) {
 	if !contains(c.ExecuteCommandProvider.Commands, "devnotes.list") ||
 		!contains(c.ExecuteCommandProvider.Commands, "devnotes.reindex") {
 		t.Fatalf("missing commands: %v", c.ExecuteCommandProvider.Commands)
+	}
+	if c.DocumentSymbolProvider != nil || c.WorkspaceSymbolProvider != nil {
+		t.Fatalf("devnotes must not advertise generic symbol providers")
 	}
 	if resp.Result.ServerInfo.Name != "devnotes" {
 		t.Fatalf("bad serverInfo")
@@ -499,7 +504,7 @@ func itemByLabel(t *testing.T, items []map[string]any, label string) map[string]
 
 func TestCompletionWorkspaceIDs(t *testing.T) {
 	s, ws := newTestServer(t)
-	writeFile(t, filepath.Join(ws, "a.go"), "package a\n\n// @note #alpha observation : Alpha note\nfunc A() {}\n\n// @note #beta todo P1 : Beta note\nfunc B() {}\n")
+	writeFile(t, filepath.Join(ws, "a.go"), "package a\n\n// @note #alpha observation : Alpha note\nfunc A() {}\n\n// @note #beta todo : Beta note\n// @priority high\nfunc B() {}\n")
 	writeFile(t, filepath.Join(ws, "b.dn"), "@note #gamma lesson : Gamma note\n")
 	openDoc(t, s, "file:///ws/see.dn", "@see #al\n")
 
@@ -538,14 +543,14 @@ func TestCompletionNoteHeaderIDAndFields(t *testing.T) {
 		t.Fatalf("@note # -> %v", labels(items))
 	}
 
-	// After '@note ': categories, statuses, priorities, today.
+	// After '@note ': categories and directives.
 	openDoc(t, s, "file:///ws/f.dn", "@note \n")
 	items = completionResult(t, s, "file:///ws/f.dn", 0, 6)
 	seen := map[string]bool{}
 	for _, l := range labels(items) {
 		seen[l] = true
 	}
-	for _, want := range []string{"observation", "issue", "open", "deprecated", "P0", "P3", "today", "@author", "@see"} {
+	for _, want := range []string{"observation", "issue", "@author", "@see"} {
 		if !seen[want] {
 			t.Fatalf("missing %q in %v", want, labels(items))
 		}
@@ -555,11 +560,11 @@ func TestCompletionNoteHeaderIDAndFields(t *testing.T) {
 func TestCompletionTagsAndAuthors(t *testing.T) {
 	s, ws := newTestServer(t)
 	writeFile(t, filepath.Join(ws, "a.dn"),
-		"@note #one issue open P1 2026-08-10 #security,#memory : One\n@author jane\n\nbody\n\n"+
-			"@note #two todo #networking : Two\n\n")
-	openDoc(t, s, "file:///ws/tags.dn", "@note #new observation  #sec : T\n\n")
+		"@note #one issue : One\n@status open\n@priority high\n@created 2026-08-10\n@tags #security #memory\n@author jane\n\nbody\n\n"+
+			"@note #two todo : Two\n@tags #networking\n\n")
+	openDoc(t, s, "file:///ws/tags.dn", "@note #new observation : T\n@tags #sec\n\n")
 
-	items := completionResult(t, s, "file:///ws/tags.dn", 0, 25) // after "#sec"
+	items := completionResult(t, s, "file:///ws/tags.dn", 1, 10) // after "#sec"
 	var got []string
 	for _, l := range labels(items) {
 		got = append(got, l)
@@ -631,7 +636,7 @@ func TestCompletionSnippetsAndBodyExclusion(t *testing.T) {
 // Hover / definition / references / symbols / links
 // ---------------------------------------------------------------------------
 
-const hoverSrc = "@note #pool-release issue open P1 2026-08-10 #pooling : Sub-document pool ownership\n@author jane\n@see #doc-lifecycle\n@see #ghost\n\nBody about Release().\n\n@note #doc-lifecycle todo : Document lifecycle\n\ndoc body\n\n"
+const hoverSrc = "@note #pool-release issue : Sub-document pool ownership\n@author jane\n@see #doc-lifecycle\n@see #ghost\n@status open\n@priority high\n@created 2026-08-10\n@tags #pooling\n\nBody about Release().\n\n@note #doc-lifecycle todo : Document lifecycle\n\ndoc body\n\n"
 
 func TestHoverRendersNoteAndReference(t *testing.T) {
 	s, _ := newTestServer(t)
@@ -660,7 +665,7 @@ func TestHoverRendersNoteAndReference(t *testing.T) {
 	if !strings.Contains(content, "### Sub-document pool ownership") {
 		t.Fatalf("hover missing title: %q", content)
 	}
-	if !strings.Contains(content, "`issue` · `open` · `P1` · `2026-08-10`") {
+	if !strings.Contains(content, "`issue` · `open` · `high` · `2026-08-10`") {
 		t.Fatalf("hover missing meta line: %q", content)
 	}
 	if !strings.Contains(content, "**Tags:** `#pooling`") {
@@ -689,7 +694,7 @@ func TestDefinitionAndReferences(t *testing.T) {
 	s, ws := newTestServer(t)
 	writeFile(t, filepath.Join(ws, "target.dn"), "@note #doc-lifecycle todo : Document lifecycle\n\ndoc body\n\n")
 	// The referencing note lives in the editor; the target only on disk.
-	openDoc(t, s, testURI, "@note #pool-release issue open P1 : Pool ownership\n@see #doc-lifecycle\n\nbody\n\n")
+	openDoc(t, s, testURI, "@note #pool-release issue : Pool ownership\n@see #doc-lifecycle\n\nbody\n\n")
 
 	// Definition from the @see value at line 2 ("@see #doc-lifecycle").
 	frames := feed(t, s, map[string]any{
@@ -799,6 +804,56 @@ func TestSymbolsAndLinks(t *testing.T) {
 	}
 }
 
+func TestSymbolsIgnoreHostFiles(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	goURI := "file:///ws/code.go"
+	openDoc(t, s, goURI, "package p\n\n// @note #host todo : In Go\nfunc F() {}\n")
+	if syms := s.documentSymbols(goURI); len(syms) != 0 {
+		t.Fatalf("documentSymbols for Go returned %d symbols: %+v", len(syms), syms)
+	}
+
+	openDoc(t, s, testURI, "@note #doc todo : In dn\n\n")
+	if syms := s.documentSymbols(testURI); len(syms) != 1 {
+		t.Fatalf("documentSymbols for .dn = %d, want 1", len(syms))
+	}
+
+	wsyms := s.workspaceSymbols("")
+	if len(wsyms) != 1 || wsyms[0]["name"] != "#doc" {
+		t.Fatalf("workspace symbols should only contain the .dn note, got %+v", wsyms)
+	}
+}
+
+func TestReferenceJumpCodeAction(t *testing.T) {
+	s, _ := newTestServer(t)
+	openDoc(t, s, testURI, hoverSrc)
+
+	// Cursor inside "@see #doc-lifecycle" (line 2, column 8).
+	acts := codeActions(t, s, testURI, 2, 8, []string{"refactor.rewrite.devnotes"})
+	var jump map[string]any
+	for _, a := range acts {
+		cmd, _ := a["command"].(map[string]any)
+		if cmd != nil && cmd["command"] == "devnotes.jumpToNote" {
+			jump = cmd
+			break
+		}
+	}
+	if jump == nil {
+		t.Fatalf("no command-object jump action in %+v", acts)
+	}
+	if title, _ := jump["title"].(string); !strings.Contains(title, "#doc-lifecycle") {
+		t.Fatalf("jump title: %q", title)
+	}
+	args, _ := jump["arguments"].([]any)
+	if len(args) != 1 {
+		t.Fatalf("jump arguments: %+v", jump["arguments"])
+	}
+	arg, _ := args[0].(map[string]any)
+	if arg["uri"] != testURI {
+		t.Fatalf("jump target uri: %+v", arg["uri"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Code actions
 // ---------------------------------------------------------------------------
@@ -865,45 +920,45 @@ func TestQuickFixMissingTitle(t *testing.T) {
 
 func TestStatusAndPriorityActions(t *testing.T) {
 	s, _ := newTestServer(t)
-	src := "@note #x issue open P1 : Ship it\n\nbody\n\n"
+	src := "@note #x issue : Ship it\n@status open\n@priority high\n\nbody\n\n"
 	openDoc(t, s, testURI, src)
 	acts := codeActions(t, s, testURI, 0, 10, nil)
 
 	a := actionByTitle(t, acts, "Mark as resolved (currently: open)")
 	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
 	got := applyEditsLSP(t, src, edits)
-	if !strings.Contains(got, "issue resolved P1") {
+	if !strings.Contains(got, "@status resolved") {
 		t.Fatalf("status replace: %q", got)
 	}
 	if actionByTitleNoErr(acts, "Reopen") {
 		t.Fatalf("Reopen must be suppressed when already open")
 	}
 
-	a = actionByTitle(t, acts, "Set priority to P0")
+	a = actionByTitle(t, acts, "Set priority to critical")
 	edits = decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
 	got = applyEditsLSP(t, src, edits)
-	if !strings.Contains(got, "issue open P0 :") {
+	if !strings.Contains(got, "@priority critical") {
 		t.Fatalf("priority replace: %q", got)
 	}
 
-	// Note without status/priority: insert in canonical position.
+	// Note without status/priority: insert new directive lines.
 	src2 := "@note #y observation : Bare\n\n"
 	openDoc(t, s, testURI, src2)
 	acts = codeActions(t, s, testURI, 0, 8, nil)
 	a = actionByTitle(t, acts, "Mark as wontfix (currently: open)")
 	edits = decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
 	got = applyEditsLSP(t, src2, edits)
-	if !strings.Contains(got, "@note #y observation wontfix : Bare") {
+	if !strings.Contains(got, "@note #y observation : Bare\n@status wontfix") {
 		t.Fatalf("status insert: %q", got)
 	}
 	// Re-open the edited text so the server re-parses before the next
 	// action (mirrors a real editor round-trip).
 	openDoc(t, s, testURI, got)
 	acts = codeActions(t, s, testURI, 0, 8, nil)
-	a = actionByTitle(t, acts, "Set priority to P2")
+	a = actionByTitle(t, acts, "Set priority to medium")
 	edits = decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
 	got = applyEditsLSP(t, got, edits)
-	if !strings.Contains(got, "@note #y observation wontfix P2 : Bare") {
+	if !strings.Contains(got, "@priority medium") {
 		t.Fatalf("priority insert: %q", got)
 	}
 }
@@ -939,7 +994,7 @@ func TestAssignActionFromConfig(t *testing.T) {
 
 func TestFormatNoteAction(t *testing.T) {
 	s, _ := newTestServer(t)
-	src := "@note #x issue P1 open : Messy header\n@author jane\n@see #other\n@see #other\n\nbody  \n\n"
+	src := "@note #x issue : Messy header\n@priority high\n@status open\n@author jane\n@see #other\n@see #other\n\nbody  \n\n"
 	openDoc(t, s, testURI, "@note #other todo : Other\n\n")
 	frames := feed(t, s, map[string]any{
 		"jsonrpc": "2.0", "method": "textDocument/didOpen",
@@ -951,7 +1006,7 @@ func TestFormatNoteAction(t *testing.T) {
 	a := actionByTitle(t, acts, "Format note")
 	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
 	got := applyEditsLSP(t, src, edits)
-	if !strings.Contains(got, "@note #x issue open P1 : Messy header") {
+	if !strings.Contains(got, "@note #x issue : Messy header\n@status open\n@priority high") {
 		t.Fatalf("canonical header order: %q", got)
 	}
 	if strings.Count(got, "@see #other") != 1 {
@@ -962,15 +1017,27 @@ func TestFormatNoteAction(t *testing.T) {
 	}
 }
 
+func TestFormatEqualsDirectives(t *testing.T) {
+	s, _ := newTestServer(t)
+	src := "@note #x issue : Equals form\n@status=open\n@priority=critical\n@tags=#a,#b\n\nbody\n"
+	openDoc(t, s, testURI, src)
+	acts := codeActions(t, s, testURI, 0, 0, nil)
+	a := actionByTitle(t, acts, "Format note")
+	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
+	got := applyEditsLSP(t, src, edits)
+	if !strings.Contains(got, "@status open\n@priority critical\n@tags #a #b") {
+		t.Fatalf("equals directives must be canonicalized, not dropped: %q", got)
+	}
+}
 func TestFormatInsideGoCommentPreservesPrefix(t *testing.T) {
 	s, _ := newTestServer(t)
-	src := "package a\n\n// @note #x issue P1 open : Messy\n// @author jane\n//\n// body line\nfunc A() {}\n"
+	src := "package a\n\n// @note #x issue : Messy\n// @priority high\n// @status open\n// @author jane\n//\n// body line\nfunc A() {}\n"
 	openDoc(t, s, "file:///ws/a.go", src)
 	acts := codeActions(t, s, "file:///ws/a.go", 2, 5, nil)
 	a := actionByTitle(t, acts, "Format note")
 	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)["file:///ws/a.go"]))
 	got := applyEditsLSP(t, src, edits)
-	if !strings.Contains(got, "// @note #x issue open P1 : Messy") {
+	if !strings.Contains(got, "// @note #x issue : Messy\n// @status open\n// @priority high") {
 		t.Fatalf("format must keep // prefix and canonical order: %q", got)
 	}
 	if !strings.Contains(got, "// body line") {
@@ -1120,7 +1187,7 @@ func TestExecuteCommandListAndGet(t *testing.T) {
 	if len(list.Items) != 1 || list.Items[0].ID != "#pool-release" {
 		t.Fatalf("list items: %+v", list.Items)
 	}
-	if list.Items[0].Display.Secondary != "issue · open · P1 · #pooling" {
+	if list.Items[0].Display.Secondary != "issue · open · high · #pooling" {
 		t.Fatalf("display.secondary: %q", list.Items[0].Display.Secondary)
 	}
 	if !strings.Contains(list.Items[0].Display.Tertiary, ":1") {
@@ -1150,6 +1217,33 @@ func TestExecuteCommandListAndGet(t *testing.T) {
 	res, _ = responseFor(t, frames, 42)
 	if string(res) != "null" {
 		t.Fatalf("unknown id should return null, got %s", res)
+	}
+
+	// atPosition: inside the first note.
+	frames = feed(t, s, map[string]any{
+		"jsonrpc": "2.0", "id": 43, "method": "workspace/executeCommand",
+		"params": map[string]any{
+			"command":   "devnotes.atPosition",
+			"arguments": []any{map[string]any{"uri": testURI, "line": 0}},
+		},
+	})
+	res, _ = responseFor(t, frames, 43)
+	var at map[string]any
+	json.Unmarshal(res, &at)
+	if at["id"] != "#pool-release" || at["detail"] != "issue · open · high" {
+		t.Fatalf("atPosition: %+v", at)
+	}
+	// atPosition outside any note -> null.
+	frames = feed(t, s, map[string]any{
+		"jsonrpc": "2.0", "id": 44, "method": "workspace/executeCommand",
+		"params": map[string]any{
+			"command":   "devnotes.atPosition",
+			"arguments": []any{map[string]any{"uri": testURI, "line": 100}},
+		},
+	})
+	res, _ = responseFor(t, frames, 44)
+	if string(res) != "null" {
+		t.Fatalf("atPosition outside note should return null, got %s", res)
 	}
 }
 
@@ -1281,7 +1375,7 @@ func TestFoldingSelectionInlayLens(t *testing.T) {
 		Kind      string `json:"kind"`
 	}
 	json.Unmarshal(res, &folds)
-	if len(folds) != 2 || folds[0].Kind != "region" || folds[0].StartLine != 5 || folds[0].EndLine != 6 {
+	if len(folds) != 2 || folds[0].Kind != "region" || folds[0].StartLine != 9 || folds[0].EndLine != 10 {
 		t.Fatalf("foldingRanges: %+v", folds)
 	}
 
@@ -1322,7 +1416,7 @@ func TestFoldingSelectionInlayLens(t *testing.T) {
 	foundHeader := false
 	foundRef := false
 	for _, h := range hints {
-		if strings.Contains(h.Label, "open · P1") {
+		if strings.Contains(h.Label, "open · high") {
 			foundHeader = true
 		}
 		if strings.HasPrefix(h.Label, "↗") {

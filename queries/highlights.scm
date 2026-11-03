@@ -8,12 +8,25 @@
 (header_line ":" @punctuation.delimiter)
 (header_line (id) @constant)
 (header_line (category) @type)
-(header_field (status) @keyword)
-(header_field (priority) @constant)
-(header_field (timestamp) @constant)
-(header_field (extension_field) @constant)
-(header_field (tags (tag_name) @tag))
 (header_line (title) @string)
+
+; ------------------------------------------------------------------
+; Metadata directives
+; ------------------------------------------------------------------
+(status_directive "@" @punctuation.delimiter)
+(status_directive "status" @keyword)
+(status_directive (status_value) @keyword)
+
+(priority_directive "@" @punctuation.delimiter)
+(priority_directive "priority" @keyword)
+(priority_directive (priority_value) @constant)
+
+(tags_directive "@" @punctuation.delimiter)
+(tags_directive "tags" @keyword)
+(tags_directive (tag_list (tag_name) @tag))
+
+(created_directive "@" @punctuation.delimiter)
+(created_directive (timestamp_value) @constant)
 
 ; ------------------------------------------------------------------
 ; Directives

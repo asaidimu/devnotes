@@ -50,7 +50,6 @@ type Note struct {
 	Timestamp string
 	HasTs     bool
 	Tags      []string
-	Ext       []HeaderField
 	Title     string
 	NoTitle   bool
 	Authors   []string
@@ -59,7 +58,8 @@ type Note struct {
 	Body      string
 	HasBody   bool
 	Range     Range
-	// Fields is every header_field in source order, used for duplicate detection.
+	// Fields is every metadata directive in source order, used for duplicate
+	// detection and in-place editing.
 	Fields []HeaderField
 
 	// Token-level source ranges (same coordinate space as Range). Zero
@@ -84,7 +84,7 @@ type ParseDiag struct {
 }
 
 const malformedHeaderMsg = "This note could not be parsed. A note starts with a header line " +
-	"\"@note #id category [status] [priority] [timestamp] [#tags] : Title\", followed by optional " +
+	"\"@note #id category : Title\", followed by optional @status/@priority/@tags/@created, " +
 	"@author/@see directives, a blank line, and the body."
 
 func r(n *sitter.Node) Range {
@@ -198,8 +198,6 @@ func buildHeader(src []byte, header *sitter.Node, n *Note) {
 		case "category":
 			n.Category = cst.NodeText(child, src)
 			n.CategoryRange = r(child)
-		case "header_field":
-			buildField(src, child, n)
 		case "title":
 			n.Title = cst.NodeText(child, src)
 			n.TitleRange = r(child)
@@ -208,38 +206,39 @@ func buildHeader(src []byte, header *sitter.Node, n *Note) {
 	}
 }
 
-func buildField(src []byte, field *sitter.Node, n *Note) {
-	for _, child := range cst.Children(field) {
-		text := cst.NodeText(child, src)
-		switch child.Kind() {
-		case "status":
-			n.Status, n.HasStatus = text, true
-			n.Fields = append(n.Fields, HeaderField{Kind: "status", Value: text, Range: r(child)})
-		case "priority":
-			n.Priority, n.HasPri = text, true
-			n.Fields = append(n.Fields, HeaderField{Kind: "priority", Value: text, Range: r(child)})
-		case "timestamp":
-			n.Timestamp, n.HasTs = text, true
-			n.Fields = append(n.Fields, HeaderField{Kind: "timestamp", Value: text, Range: r(child)})
-		case "extension_field":
-			n.Ext = append(n.Ext, HeaderField{Kind: "extension", Value: text, Range: r(child)})
-		case "tags":
-			n.Tags = nil
-			n.TagRanges = nil
-			for _, tag := range cst.Children(child) {
-				if tag.Kind() == "tag_name" {
-					n.Tags = append(n.Tags, cst.NodeText(tag, src))
-					n.TagRanges = append(n.TagRanges, r(tag))
-				}
-			}
-			n.Fields = append(n.Fields, HeaderField{Kind: "tags", Value: strings.Join(n.Tags, ","), Range: r(child)})
-		}
-	}
-}
-
 func buildDirective(src []byte, dl *sitter.Node, n *Note) {
 	for _, child := range cst.Children(dl) {
 		switch child.Kind() {
+		case "status_directive":
+			if v := namedChild(child, "status_value"); v != nil {
+				text := cst.NodeText(v, src)
+				n.Status, n.HasStatus = text, true
+				n.Fields = append(n.Fields, HeaderField{Kind: "status", Value: text, Range: r(v)})
+			}
+		case "priority_directive":
+			if v := namedChild(child, "priority_value"); v != nil {
+				text := cst.NodeText(v, src)
+				n.Priority, n.HasPri = text, true
+				n.Fields = append(n.Fields, HeaderField{Kind: "priority", Value: text, Range: r(v)})
+			}
+		case "created_directive":
+			if v := namedChild(child, "timestamp_value"); v != nil {
+				text := cst.NodeText(v, src)
+				n.Timestamp, n.HasTs = text, true
+				n.Fields = append(n.Fields, HeaderField{Kind: "timestamp", Value: text, Range: r(v)})
+			}
+		case "tags_directive":
+			if tl := namedChild(child, "tag_list"); tl != nil {
+				n.Tags = nil
+				n.TagRanges = nil
+				for _, tag := range cst.Children(tl) {
+					if tag.Kind() == "tag_name" {
+						n.Tags = append(n.Tags, cst.NodeText(tag, src))
+						n.TagRanges = append(n.TagRanges, r(tag))
+					}
+				}
+				n.Fields = append(n.Fields, HeaderField{Kind: "tags", Value: strings.Join(n.Tags, ","), Range: r(tl)})
+			}
 		case "author_directive":
 			if av := namedChild(child, "author_value"); av != nil {
 				n.Authors = append(n.Authors, cst.NodeText(av, src))

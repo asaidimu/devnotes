@@ -306,7 +306,7 @@ func toEntry(file string, n model.Note) Entry {
 		},
 	}
 	if n.HasPri {
-		e.Priority = n.Priority
+		e.Priority = model.PriorityLabel(n.Priority)
 	}
 	if n.HasTs {
 		e.Timestamp = n.Timestamp

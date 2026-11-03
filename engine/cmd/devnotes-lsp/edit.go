@@ -89,8 +89,8 @@ func isBlankAfterPrefix(line []byte, prefix string) bool {
 	return strings.TrimRight(rest, " \t\r") == ""
 }
 
-// canonicalMetadata renders the canonical metadata lines for a note (§8.6):
-// header with ordered tokens, then authors, then deduplicated @see lines,
+// canonicalMetadata renders the canonical metadata lines for a note:
+// header, then core metadata directives, authors, deduplicated @see lines,
 // then extension directives — each group preserving insertion order.
 // Returns nil for notes whose header could not be parsed; those are left
 // untouched by formatting.
@@ -99,30 +99,23 @@ func canonicalMetadata(e *NoteEntry) []string {
 	if n.ID == "" || n.Category == "" || n.NoTitle {
 		return nil
 	}
-	var b strings.Builder
-	b.WriteString("@note " + n.ID + " " + n.Category)
+	out := []string{"@note " + n.ID + " " + n.Category + " : " + n.Title}
 	if n.HasStatus {
-		b.WriteString(" " + n.Status)
+		out = append(out, "@status "+n.Status)
 	}
 	if n.HasPri {
-		b.WriteString(" " + n.Priority)
-	}
-	if n.HasTs {
-		b.WriteString(" " + n.Timestamp)
+		out = append(out, "@priority "+model.PriorityLabel(n.Priority))
 	}
 	if len(n.Tags) > 0 {
 		tags := make([]string, len(n.Tags))
 		for i, t := range n.Tags {
 			tags[i] = "#" + t
 		}
-		b.WriteString(" " + strings.Join(tags, ","))
+		out = append(out, "@tags "+strings.Join(tags, " "))
 	}
-	for _, f := range n.Ext {
-		b.WriteString(" " + f.Value)
+	if n.HasTs {
+		out = append(out, "@created "+n.Timestamp)
 	}
-	b.WriteString(" : " + n.Title)
-
-	out := []string{b.String()}
 	for _, a := range n.Authors {
 		out = append(out, "@author "+a)
 	}
@@ -289,7 +282,7 @@ func headerCategoryEnd(line, id, category string) int {
 }
 
 // statusEdit computes the edit that sets a note's status, replacing an
-// existing token in place or inserting one in canonical position.
+// existing directive value or inserting a new @status directive.
 func statusEdit(d *doc, e *NoteEntry, status string) (textEditB, bool) {
 	lines := docLines(d)
 	if r, ok := fieldRangeOf(e, "status"); ok {
@@ -298,32 +291,26 @@ func statusEdit(d *doc, e *NoteEntry, status string) (textEditB, bool) {
 			return replaceTokenEdit(line, r, status, lines), true
 		}
 	}
-	line, col, ok := headerInsertCol(e, lines)
-	if !ok {
-		return textEditB{}, false
-	}
-	return textEditB{StartLine: uint(line), StartCol: col, EndLine: uint(line), EndCol: col,
-		NewText: " " + status}, true
+	return insertDirectiveEdit(d, e, "@status "+status), true
 }
 
 // priorityEdit computes the edit that sets (or clears) a note's priority.
+// Removing a priority deletes the whole @priority directive line.
 func priorityEdit(d *doc, e *NoteEntry, priority string) (textEditB, bool) {
 	lines := docLines(d)
 	if r, ok := fieldRangeOf(e, "priority"); ok {
 		line := int(r.StartLine)
 		if line < len(lines) {
-			return replaceTokenEdit(line, r, priority, lines), true
+			if priority == "" {
+				return removeLineEdit(line), true
+			}
+			return replaceTokenEdit(line, r, model.PriorityLabel(priority), lines), true
 		}
 	}
 	if priority == "" {
 		return textEditB{}, false // nothing to clear
 	}
-	line, col, ok := headerInsertCol(e, lines)
-	if !ok {
-		return textEditB{}, false
-	}
-	return textEditB{StartLine: uint(line), StartCol: col, EndLine: uint(line), EndCol: col,
-		NewText: " " + priority}, true
+	return insertDirectiveEdit(d, e, "@priority "+model.PriorityLabel(priority)), true
 }
 
 // assignEdit sets the @assign directive: replaces an existing line's value
@@ -368,25 +355,34 @@ func titlePlaceholderEdit(d *doc, e *NoteEntry) (textEditB, bool) {
 }
 
 // removeTagEdit removes a tag token (including its '#') plus an adjacent
-// comma so the remaining tags field stays parsable.
+// separator so the remaining @tags directive stays parsable. When it is the
+// last tag, the whole directive line is removed.
 func removeTagEdit(d *doc, e *NoteEntry, r model.Range) (textEditB, bool) {
 	lines := docLines(d)
 	line := int(r.StartLine)
 	if line < 0 || line >= len(lines) {
 		return textEditB{}, false
 	}
+	if len(e.N().Tags) <= 1 {
+		return removeLineEdit(line), true
+	}
 	hashStart := int(r.StartCol) - 1
 	if hashStart < 0 {
 		hashStart = 0
 	}
 	end := int(r.EndCol)
-	if hashStart > 0 && lines[line][hashStart-1] == ',' {
+	switch {
+	case hashStart > 0 && lines[line][hashStart-1] == ',':
 		hashStart--
-	} else if end < len(lines[line]) && lines[line][end] == ',' {
+	case end < len(lines[line]) && lines[line][end] == ',':
 		end++
 		for end < len(lines[line]) && lines[line][end] == ' ' {
 			end++
 		}
+	case end < len(lines[line]) && lines[line][end] == ' ':
+		end++
+	case hashStart > 0 && lines[line][hashStart-1] == ' ':
+		hashStart--
 	}
 	return textEditB{StartLine: uint(line), StartCol: uint(hashStart),
 		EndLine: uint(line), EndCol: uint(end), NewText: ""}, true

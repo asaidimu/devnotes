@@ -8,11 +8,13 @@ body of b
 
 
 ---
+
 (source_file
   (note_block
     (header_line
       (ERROR
-        (UNEXPECTED '.'))
+        (UNEXPECTED '.')
+        (category))
       (id)
       (category)
       (title))
@@ -29,16 +31,15 @@ Malformed header line (missing delimiter)
 
 
 ---
+
 (source_file
   (note_block
     (header_line
       (id)
       (category)
-      (ERROR)
-      (header_field
-        (tags
-          (tag_name)))
-      (header_field
-        (extension_field))
+      (ERROR
+        (category)
+        (category)
+        (category))
       (title))
     (separator_line)))

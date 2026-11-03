@@ -66,6 +66,17 @@ func CheckFile(filename, ext string, src []byte) (FileResult, error) {
 	var notes []model.Note
 	for _, region := range regions {
 		content, sm := normalize.Normalize(region)
+		// Host comments are ordinary comments until proven otherwise: only
+		// parse a comment region when it actually contains a note header.
+		// Standalone .dn files are DevNotes by definition, so they keep the
+		// strict whole-file behavior (INVALID_HEADER for stray text).
+		if lang != "dn" {
+			var ok bool
+			content, sm, ok = trimToFirstNote(content, sm)
+			if !ok {
+				continue
+			}
+		}
 		ns, pdiags, err := model.BuildWithDiags([]byte(ensureTerminator(content)))
 		if err != nil {
 			return res, err
@@ -115,6 +126,37 @@ func notePrefixes(n *model.Note, sm normalize.SourceMap, src []byte) []string {
 		out = append(out, prefix)
 	}
 	return out
+}
+
+// trimToFirstNote drops comment lines before the first DevNote header and
+// trims the source map to match. A host comment that never starts a header is
+// reported as "not a note" (ok=false) so ordinary code comments are ignored.
+func trimToFirstNote(content string, sm normalize.SourceMap) (string, normalize.SourceMap, bool) {
+	lines := strings.Split(content, "\n")
+	idx := -1
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(trimmed, "@note") {
+			continue
+		}
+		rest := trimmed[len("@note"):]
+		if rest == "" || rest[0] == ' ' || rest[0] == '\t' {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return "", sm, false
+	}
+	if idx == 0 {
+		return content, sm, true
+	}
+	if idx > len(sm.Lines) {
+		idx = len(sm.Lines)
+	}
+	sm.Lines = sm.Lines[idx:]
+	lines = lines[idx:]
+	return strings.Join(lines, "\n"), sm, true
 }
 
 // ensureTerminator guarantees the normalized content parses as complete notes:
@@ -179,9 +221,6 @@ func mapNote(n *model.Note, sm *normalize.SourceMap) {
 	n.HeaderRange = sourceRange(n.HeaderRange, *sm)
 	for i := range n.Fields {
 		n.Fields[i].Range = sourceRange(n.Fields[i].Range, *sm)
-	}
-	for i := range n.Ext {
-		n.Ext[i].Range = sourceRange(n.Ext[i].Range, *sm)
 	}
 	for i := range n.Refs {
 		n.Refs[i].Range = sourceRange(n.Refs[i].Range, *sm)

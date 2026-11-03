@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/devnotes/engine/internal/index"
+	"github.com/asaidimu/devnotes/engine/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -65,8 +66,12 @@ func filterEntries(idx *index.Index, f filters) []index.Entry {
 		if f.status != "" && !strings.EqualFold(e.Status, f.status) {
 			continue
 		}
-		if f.priority != "" && !strings.EqualFold(e.Priority, f.priority) {
-			continue
+		if f.priority != "" {
+			want, wok := model.NormalizePriority(f.priority)
+			got, gok := model.NormalizePriority(e.Priority)
+			if !wok || !gok || want != got {
+				continue
+			}
 		}
 		if f.tag != "" && !hasTag(e.Tags, f.tag) {
 			continue

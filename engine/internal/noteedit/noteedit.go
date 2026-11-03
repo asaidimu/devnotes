@@ -187,15 +187,19 @@ func Add(file string, beforeLine int, opts AddOptions) (string, error) {
 }
 
 func buildNoteBlock(id string, opts AddOptions, style commentStyle, indent string) []string {
-	header := "@note #" + id + " " + opts.Category
+	wrap := func(text string) string {
+		if style.isDN {
+			return indent + text
+		}
+		return indent + style.prefix + text
+	}
+
+	lines := []string{wrap("@note #" + id + " " + opts.Category + " : " + opts.Title)}
 	if opts.Status != "" && opts.Status != "open" {
-		header += " " + opts.Status
+		lines = append(lines, wrap("@status "+opts.Status))
 	}
 	if opts.Priority != "" {
-		header += " " + opts.Priority
-	}
-	if opts.Timestamp != "" {
-		header += " " + opts.Timestamp
+		lines = append(lines, wrap("@priority "+model.PriorityLabel(opts.Priority)))
 	}
 	if len(opts.Tags) > 0 {
 		tags := make([]string, len(opts.Tags))
@@ -203,18 +207,11 @@ func buildNoteBlock(id string, opts AddOptions, style commentStyle, indent strin
 			t = strings.TrimPrefix(t, "#")
 			tags[i] = "#" + t
 		}
-		header += " " + strings.Join(tags, ",")
+		lines = append(lines, wrap("@tags "+strings.Join(tags, " ")))
 	}
-	header += " : " + opts.Title
-
-	var lines []string
-	wrap := func(text string) string {
-		if style.isDN {
-			return indent + text
-		}
-		return indent + style.prefix + text
+	if opts.Timestamp != "" {
+		lines = append(lines, wrap("@created "+opts.Timestamp))
 	}
-	lines = append(lines, wrap(header))
 	if opts.Author != "" {
 		lines = append(lines, wrap("@author "+opts.Author))
 	}
@@ -223,11 +220,7 @@ func buildNoteBlock(id string, opts AddOptions, style commentStyle, indent strin
 	}
 	if opts.Body != "" {
 		// The grammar requires a blank separator line between the
-		// directive block and free-text body (verified empirically: a
-		// body line placed directly after the header/directives with no
-		// blank line in between is silently dropped by the parser, with
-		// no diagnostic). Only needed when there's body content to
-		// separate.
+		// directive block and free-text body.
 		if style.isDN {
 			lines = append(lines, indent)
 		} else {
@@ -255,14 +248,18 @@ func SetStatus(file, id, status string) error {
 	})
 }
 
-// SetPriority rewrites a note's priority field in place, inserting one if
-// absent. priority must be P0-P3, or "" to leave unset (no-op if already
-// unset).
+// SetPriority rewrites a note's priority directive in place, inserting one
+// if absent. priority accepts the canonical words or legacy P0-P3 aliases;
+// "" is a no-op.
 func SetPriority(file, id, priority string) error {
 	if priority == "" {
 		return nil
 	}
-	return editHeaderField(file, id, "priority", priority, func(n *model.Note) (model.HeaderField, bool) {
+	word, ok := model.NormalizePriority(priority)
+	if !ok {
+		return fmt.Errorf("unknown priority %q (use critical, high, medium or low)", priority)
+	}
+	return editHeaderField(file, id, "priority", word, func(n *model.Note) (model.HeaderField, bool) {
 		if n.HasPri {
 			for _, f := range n.Fields {
 				if f.Kind == "priority" {
@@ -274,11 +271,9 @@ func SetPriority(file, id, priority string) error {
 	})
 }
 
-// editHeaderField replaces an existing header field's text (via its known
-// range) or, if the field is absent, inserts " <value>" immediately after
-// the category token on the header line. This is a text-level edit rather
-// than a re-render of the whole header so unrelated formatting (metadata
-// order, spacing) is left untouched.
+// editHeaderField replaces an existing metadata directive's value (via its
+// known range) or, if absent, inserts a new directive line at the end of the
+// note's directive block. Text-level edits leave unrelated formatting alone.
 func editHeaderField(file, id, kind, value string, existing func(*model.Note) (model.HeaderField, bool)) error {
 	n, err := FindInFile(file, id)
 	if err != nil {
@@ -306,47 +301,30 @@ func editHeaderField(file, id, kind, value string, existing func(*model.Note) (m
 		return writeLines(file, lines, nl)
 	}
 
-	// Not present: insert right after the category token on the header
-	// line. The header line is the first line of the note's range.
-	ln := int(n.Range.StartLine)
-	if ln < 0 || ln >= len(lines) {
-		return fmt.Errorf("header line out of bounds for %s", id)
-	}
-	line := lines[ln]
-	idx := headerCategoryEnd(line, normalizeID(n.ID), n.Category)
-	if idx < 0 {
-		return fmt.Errorf("could not locate category token for %s in %s", id, file)
-	}
-	lines[ln] = line[:idx] + " " + value + line[idx:]
-	return writeLines(file, lines, nl)
+	return insertDirective(file, n, lines, nl, "@"+kind+" "+value)
 }
 
-var wsRun = regexp.MustCompile(`\s+`)
-
-// headerCategoryEnd finds the byte offset right after the category token
-// on a "@note #id category ..." line, by locating "@note", skipping the
-// id token, then the category token. Returns -1 if not found.
-func headerCategoryEnd(line, id, category string) int {
-	at := strings.Index(line, "@note")
-	if at < 0 {
-		return -1
+// insertDirective appends a directive line after the note's last directive
+// (or header when there are none), matching the host comment style.
+func insertDirective(file string, n *model.Note, lines []string, nl string, text string) error {
+	ln := int(n.Range.StartLine)
+	if len(n.DirectiveRanges) > 0 {
+		ln = int(n.DirectiveRanges[len(n.DirectiveRanges)-1].StartLine)
 	}
-	rest := line[at+len("@note"):]
-	// Skip whitespace, then the "#id" token.
-	idTok := "#" + id
-	idPos := strings.Index(rest, idTok)
-	if idPos < 0 {
-		return -1
+	if ln < 0 || ln >= len(lines) {
+		return fmt.Errorf("directive insertion point out of bounds for %s", n.ID)
 	}
-	after := rest[idPos+len(idTok):]
-	// Skip whitespace before category.
-	trimmed := strings.TrimLeft(after, " \t")
-	skipped := len(after) - len(trimmed)
-	if !strings.HasPrefix(trimmed, category) {
-		return -1
+	indent := leadingWhitespace(lines[ln])
+	style := styleFor(filepath.Ext(file))
+	newLine := indent + text
+	if !style.isDN {
+		newLine = indent + style.prefix + text
 	}
-	base := at + len("@note") + idPos + len(idTok) + skipped
-	return base + len(category)
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:ln+1]...)
+	out = append(out, newLine)
+	out = append(out, lines[ln+1:]...)
+	return writeLines(file, out, nl)
 }
 
 // SetExtension sets (or replaces) an "@name value" extension directive

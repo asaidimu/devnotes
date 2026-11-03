@@ -48,9 +48,12 @@ DevNote
 │   ├── @note
 │   ├── ID
 │   ├── Category
-│   ├── Metadata
 │   └── Title
 ├── Metadata Directives
+│   ├── @status
+│   ├── @priority
+│   ├── @tags
+│   ├── @created
 │   ├── @author
 │   └── @see
 ├── Separator
@@ -177,14 +180,17 @@ wontfix
 deprecated
 ```
 
-Priority values use uppercase:
+Canonical priority values are lowercase words:
 
 ```text
-P0
-P1
-P2
-P3
+critical
+high
+medium
+low
 ```
+
+The legacy aliases `P0`–`P3` are accepted only as `@priority` values, for
+migration from earlier drafts. Tools emit the canonical words.
 
 ---
 
@@ -350,7 +356,7 @@ are both blank.
 The canonical DevNote syntax is:
 
 ```text
-@note <id> <category> [metadata...] : <title>
+@note <id> <category> : <title>
 @<directive> <value>
 @<directive> <value>
 
@@ -360,15 +366,17 @@ The canonical DevNote syntax is:
 Example:
 
 ```go
-// @note #pool-ownership observation P1 #pooling,#decoders : Sub-document pool ownership
+// @note #pool-ownership observation : Sub-document pool ownership
+// @status open
+// @priority critical
+// @tags #pooling #decoders
+// @created 2026-08-07
 // @author jane
 // @see #document-lifecycle
 //
 // The current design ties Document.Release() to a single pool.
 // Nested sub-documents need their own pools.
 ```
-
----
 
 # 7. Header
 
@@ -378,7 +386,6 @@ The header has the following logical structure:
 @note
 <id>
 <category>
-<metadata>
 :
 <title>
 ```
@@ -391,7 +398,7 @@ The first occurrence of the exact delimiter:
  : 
 ```
 
-after the category terminates metadata parsing.
+after the category terminates the header and starts the title.
 
 The title may contain additional colons:
 
@@ -405,7 +412,8 @@ The title is:
 Why A : B is necessary
 ```
 
----
+Header metadata is never positional. Status, priority, tags, timestamps,
+authors, and references are expressed as directive lines after the header.
 
 # 8. Note ID
 
@@ -514,34 +522,51 @@ Tools MUST preserve unknown categories rather than rejecting the entire note.
 
 ---
 
-# 10. Header Metadata
+# 10. Metadata Directives
 
-The core header metadata fields are:
+Core metadata directives are:
 
-| Field     | Required | Default |
-| --------- | -------: | ------- |
-| status    |       no | `open`  |
-| priority  |       no | none    |
-| timestamp |       no | none    |
-| tags      |       no | empty   |
+| Directive   | Values                                        | Required | Default |
+| ----------- | --------------------------------------------- | -------: | ------- |
+| `@status`   | `open`, `resolved`, `wontfix`, `deprecated`   |       no | `open`  |
+| `@priority` | `critical`, `high`, `medium`, `low`           |       no | none    |
+| `@tags`     | one or more `#tag` identifiers                |       no | empty   |
+| `@created`  | ISO 8601 timestamp                            |       no | none    |
 
-Metadata fields are unordered.
+Directives appear one per line, immediately after the header and before the
+separator. Their order is not significant.
 
 Example:
 
 ```text
-@note #x issue P1 open 2026-08-10 #security,#input : Possible XSS
+@note #x issue : Possible XSS
+@status open
+@priority high
+@tags #security #input
+@created 2026-08-10
 ```
 
 is equivalent to:
 
 ```text
-@note #x issue open #security,#input P1 2026-08-10 : Possible XSS
+@note #x issue : Possible XSS
+@created 2026-08-10
+@tags #input, #security
+@priority high
+@status open
 ```
+
+Each core directive may appear at most once.
 
 ---
 
 # 11. Status
+
+Status is expressed with `@status`:
+
+```text
+@status open
+```
 
 The core statuses are:
 
@@ -580,27 +605,32 @@ The note remains historically relevant but should no longer be treated as active
 
 # 12. Priority
 
-Priority is optional.
+Priority is optional and is expressed with `@priority`:
+
+```text
+@priority high
+```
 
 The core priorities are:
 
 ```text
-P0
-P1
-P2
-P3
+critical
+high
+medium
+low
 ```
 
 Recommended semantics:
 
-| Priority | Meaning                        |
-| -------- | ------------------------------ |
-| P0       | Critical; immediate attention  |
-| P1       | High importance                |
-| P2       | Normal importance              |
-| P3       | Low importance / informational |
+| Priority   | Legacy alias | Meaning                        |
+| ---------- | ------------ | ------------------------------ |
+| `critical` | `P0`         | Critical; immediate attention  |
+| `high`     | `P1`         | High importance                |
+| `medium`   | `P2`         | Normal importance              |
+| `low`      | `P3`         | Low importance / informational |
 
-Priority does not imply severity.
+The legacy aliases are accepted for migration only; canonical output uses the
+words. Priority does not imply severity.
 
 An implementation MAY define additional severity metadata independently.
 
@@ -608,9 +638,14 @@ An implementation MAY define additional severity metadata independently.
 
 # 13. Timestamp
 
-The timestamp uses ISO 8601.
+The `@created` directive records the time associated with creation or
+observation of the note. `@timestamp` is an accepted alias.
 
-Examples:
+It does not represent source-file modification time.
+
+If absent, the semantic value is `null`.
+
+The value uses ISO 8601:
 
 ```text
 2026-08-10
@@ -619,30 +654,31 @@ Examples:
 2026-08-10T16:29+03:00
 ```
 
-A timestamp records the time associated with creation or observation of the note.
+Example:
 
-It does not represent source-file modification time.
+```text
+@created 2026-08-10
+```
 
-If absent, the semantic value is `null`.
-
-Tools MAY display file modification time or version-control information separately.
+Tools MAY display file modification time or version-control information
+separately.
 
 ---
 
 # 14. Tags
 
-Tags are comma-separated identifiers.
+Tags are identifiers prefixed with `#`, expressed with `@tags`.
 
-Canonical syntax:
+Canonical syntax uses whitespace between tags:
 
 ```text
-#pooling,#performance,#memory
+@tags #pooling #performance #memory
 ```
 
-Whitespace after commas is permitted:
+Commas are also accepted:
 
 ```text
-#pooling, #performance, #memory
+@tags #pooling, #performance, #memory
 ```
 
 Each tag MUST begin with `#`.
@@ -650,28 +686,24 @@ Each tag MUST begin with `#`.
 Grammar:
 
 ```abnf
-tags = tag *("," [WS] tag)
-tag  = "#" tag-name
+tag-list = tag *(WS / "," [WS]) tag
+tag      = "#" tag-name
 tag-name = 1*(ALPHA / DIGIT / "-" / "_")
 ```
 
 Therefore:
 
 ```text
-#pooling,decoders
+@tags #pooling,#decoders
 ```
 
-is invalid in v3.
-
-The canonical form is:
+is valid and equivalent to:
 
 ```text
-#pooling,#decoders
+@tags #pooling #decoders
 ```
 
-Implementations MAY offer a compatibility mode for v2-style tags.
-
----
+The canonical form uses spaces.
 
 # 15. Title
 
@@ -690,7 +722,7 @@ Leading and trailing whitespace is removed.
 Example:
 
 ```text
-@note #x observation P2 : Current cache is process-local
+@note #x observation : Current cache is process-local
 ```
 
 The title is:
@@ -710,6 +742,10 @@ Metadata directives occur after the header and before the body separator.
 Core directives:
 
 ```text
+@status <status>
+@priority <priority>
+@tags <tag-list>
+@created <timestamp>
 @author <identifier>
 @see <reference>
 ```
@@ -839,18 +875,22 @@ After the separator, all content is body content.
 
 # 21. Metadata Validation
 
-Each core metadata field may occur at most once unless explicitly defined otherwise.
+Each core metadata directive may occur at most once unless explicitly defined otherwise.
 
 Therefore this is invalid:
 
 ```text
-@note #x issue P1 P2 : Something
+@note #x issue : Something
+@priority high
+@priority medium
 ```
 
 and this is invalid:
 
 ```text
-@note #x issue open resolved : Something
+@note #x issue : Something
+@status open
+@status resolved
 ```
 
 Unknown directives MAY repeat.
@@ -967,7 +1007,8 @@ A note may have an empty body.
 Example:
 
 ```text
-// @note #remove-api todo P1 : Remove deprecated API
+// @note #remove-api todo : Remove deprecated API
+// @priority high
 //
 ```
 
@@ -984,10 +1025,20 @@ The following grammar defines the core syntax after host-comment normalization.
 ```abnf
 note-block      = header-line *(directive-line) separator-line *body-line
 
-header-line     = "@note" WS id WS category *(WS header-field) WS ":" WS title
+header-line     = "@note" WS id WS category WS ":" WS title
 
-directive-line  = author-line / see-line / extension-line
+directive-line  = status-line
+                / priority-line
+                / tags-line
+                / created-line
+                / author-line
+                / see-line
+                / extension-line
 
+status-line     = "@status" WS status
+priority-line   = "@priority" WS priority
+tags-line       = "@tags" WS tag-list
+created-line    = ("@created" / "@timestamp") WS timestamp
 author-line     = "@author" WS value
 see-line        = "@see" WS reference
 extension-line  = "@" directive-name [WS value]
@@ -1000,23 +1051,25 @@ id              = "#" 1*(ALPHA / DIGIT / "-" / "_")
 
 category        = identifier
 
-header-field    = status / priority / timestamp / tags
-
 status          = "open"
                 / "resolved"
                 / "wontfix"
                 / "deprecated"
 
-priority        = "P" ("0" / "1" / "2" / "3")
+priority        = "critical"
+                / "high"
+                / "medium"
+                / "low"
+                / legacy-priority
+
+legacy-priority = "P" ("0" / "1" / "2" / "3")
 
 timestamp       = iso-date
                 / iso-date "T" iso-time
                 / iso-date "T" iso-time timezone
 
-tags            = tag *("," [WS] tag)
-
+tag-list        = tag *(WS / "," [WS]) tag
 tag             = "#" tag-name
-
 tag-name        = 1*(ALPHA / DIGIT / "-" / "_")
 
 directive-name  = 1*(ALPHA / DIGIT / "-" / "_")
@@ -1046,12 +1099,10 @@ The ISO 8601 productions are intentionally referenced rather than completely rep
 
 A parser MUST NOT classify metadata by “most likely” shape.
 
-Instead, it MUST parse fields deterministically.
-
-Given:
+The header has no positional metadata. Given:
 
 ```text
-@note #id category <fields> : title
+@note #id category : title
 ```
 
 the parser performs the following steps:
@@ -1059,16 +1110,16 @@ the parser performs the following steps:
 1. Verify `@note`.
 2. Parse the ID.
 3. Parse the category.
-4. Locate the first exact `:` delimiter.
-5. Treat everything between category and delimiter as metadata tokens.
-6. Parse each metadata token according to the core field grammar.
-7. Reject duplicate core fields.
-8. Preserve unknown tokens as extension metadata where possible.
-9. Parse the title as the remainder after the delimiter.
+4. Locate the first exact ` : ` delimiter.
+5. Parse the title as the remainder after the delimiter.
+6. Read each following directive line until the separator.
+7. Validate directive values by kind (`@status`, `@priority`, `@tags`,
+   `@created`, `@author`, `@see`, or an extension).
+8. Reject duplicate core directives.
+9. Preserve unknown directives as extension metadata.
 
-This eliminates the ambiguity present in shape-based detection.
-
-If a token could legally represent multiple core fields, the note is invalid rather than heuristically interpreted.
+This eliminates the ambiguity present in shape-based detection. A malformed
+core value is reported, not reinterpreted as an extension directive.
 
 ---
 
@@ -1079,28 +1130,19 @@ Tools that rewrite DevNotes SHOULD serialize them in canonical form.
 Recommended order:
 
 ```text
-@note <id> <category> [status] [priority] [timestamp] [tags] : <title>
+@note <id> <category> : <title>
+@status <status>          (if present)
+@priority <priority>      (if present)
+@tags <tag-list>          (if present)
+@created <timestamp>      (if present)
 @author ...
 @see ...
 
 <body>
 ```
 
-For example:
-
-```text
-// @note #pool observation open P1 2026-08-10 #pooling,#memory : Pool ownership
-// @author jane
-// @see #allocator
-//
-// The pool must remain valid until all nested documents are released.
-```
-
-Canonical serialization is not required for parsing.
-
-Equivalent metadata orderings MUST retain the same semantic meaning.
-
----
+Canonical priority values are the words `critical`, `high`, `medium`, and
+`low`. Legacy `P0`–`P3` values are normalized on rewrite.
 
 # 29. Source Location
 
@@ -1162,10 +1204,10 @@ type NoteStatus =
   | "deprecated";
 
 type NotePriority =
-  | "P0"
-  | "P1"
-  | "P2"
-  | "P3";
+  | "critical"
+  | "high"
+  | "medium"
+  | "low";
 
 interface SourceLocation {
   file: string;
@@ -1268,23 +1310,30 @@ If a future DevNotes version introduces incompatible syntax, a workspace-level d
 
 # 34. Compatibility
 
-A v3 parser MAY support a compatibility mode for v2 notes.
-
-Compatibility mode MAY accept:
-
-```text
-#pooling,decoders
-```
-
-as equivalent to:
+This revision removed positional header metadata. A parser MUST reject a
+legacy header such as:
 
 ```text
-#pooling,#decoders
+@note #x issue open P1 #tag : Title
 ```
 
-Compatibility behavior MUST be explicit.
+It is a syntax error, not a note with extension metadata. To upgrade a
+workspace, rewrite old headers with:
 
-A tool MUST NOT silently reinterpret malformed v3 syntax under compatibility rules unless compatibility mode is enabled.
+```sh
+devnotes migrate --dry-run
+devnotes migrate
+```
+
+The migrator preserves comment prefixes and converts positional fields into
+`@status`, `@priority`, `@tags`, and `@created` directives.
+
+Legacy `P0`–`P3` values remain valid only as `@priority` values. Tag lists
+accept either spaces or commas.
+
+Some generators emit `=` between a directive name and its value
+(`@status=open`, `@priority=high`, `@tags=#a,#b`). Implementations MUST accept
+this spelling for compatibility; canonical serialization uses a space.
 
 ---
 
@@ -1352,7 +1401,10 @@ AI-generated notes SHOULD identify their origin through `@author`.
 Example:
 
 ```text
-// @note #agent-20260810-1 issue open P1 #security : Possible XSS
+// @note #agent-20260810-1 issue : Possible XSS
+// @status open
+// @priority high
+// @tags #security
 // @author ai-code-reviewer-v2
 //
 // The `comment` field is rendered without escaping.
@@ -1389,7 +1441,8 @@ The `prompt` category is intended for reusable instructions embedded near releva
 Example:
 
 ```text
-// @note #review-memory prompt #memory,#performance : Review allocation behavior
+// @note #review-memory prompt : Review allocation behavior
+// @tags #memory #performance
 // @author ai-reviewer
 //
 // Review this implementation for:
@@ -1462,7 +1515,7 @@ reference
 This enables queries such as:
 
 ```text
-all open P0/P1 issues
+all open critical/high issues
 all notes tagged #performance
 all notes authored by an AI agent
 all notes referencing #allocator
@@ -1601,7 +1654,11 @@ Source locations SHOULD be treated as mutable indexing information.
 ## 47.1 Human observation
 
 ```go
-// @note #pool-ownership observation open P1 2026-08-07 #pooling,#decoders : Sub-document pool ownership
+// @note #pool-ownership observation : Sub-document pool ownership
+// @status open
+// @priority high
+// @created 2026-08-07
+// @tags #pooling #decoders
 // @author jane
 // @see #document-lifecycle
 //
@@ -1617,7 +1674,11 @@ func (d *Document) Release() { ... }
 ## 47.2 Agent-generated issue
 
 ```python
-# @note #agent-20260810-1 issue open P2 2026-08-10 #security : Possible XSS in user input
+# @note #agent-20260810-1 issue : Possible XSS in user input
+# @status open
+# @priority medium
+# @created 2026-08-10
+# @tags #security
 # @author ai-code-reviewer-v2
 #
 # The `comment` field is rendered without escaping in the template.
@@ -1632,7 +1693,10 @@ def render_comment(comment):
 
 ```rust
 /*
- * @note #vec-context context P3 2026-08-07 #performance,#ownership : Why Vec<u8> is used
+ * @note #vec-context context : Why Vec<u8> is used
+ * @priority low
+ * @created 2026-08-07
+ * @tags #performance #ownership
  * @see #buffer-lifetime
  * @see https://doc.rust-lang.org/std/vec/struct.Vec.html
  *
@@ -1649,7 +1713,9 @@ void process(void *data, size_t len) { ... }
 ## 47.4 Todo
 
 ```java
-// @note #remove-deprecated-api todo P1 2026-08-10 : Remove deprecated API
+// @note #remove-deprecated-api todo : Remove deprecated API
+// @priority high
+// @created 2026-08-10
 // @author admin
 //
 ```
@@ -1659,7 +1725,8 @@ void process(void *data, size_t len) { ... }
 ## 47.5 Multiple references
 
 ```text
-// @note #storage-design decision #storage,#architecture : Use append-only records
+// @note #storage-design decision : Use append-only records
+// @tags #storage #architecture
 // @author architecture-team
 // @see #storage-recovery
 // @see #storage-compaction
@@ -1672,7 +1739,9 @@ void process(void *data, size_t len) { ... }
 ## 47.6 Extension metadata
 
 ```text
-// @note #cache-risk issue P1 #cache : Cache invalidation race
+// @note #cache-risk issue : Cache invalidation race
+// @priority high
+// @tags #cache
 // @author jane
 // @component cache
 // @deadline 2026-12-31
@@ -1709,7 +1778,11 @@ The smallest useful embedded representation is therefore:
 A fully populated note may look like:
 
 ```text
-// @note #pool-ownership issue open P1 2026-08-10T16:29+03:00 #pooling,#memory : Nested documents can outlive their parent pool
+// @note #pool-ownership issue : Nested documents can outlive their parent pool
+// @status open
+// @priority high
+// @created 2026-08-10T16:29+03:00
+// @tags #pooling #memory
 // @author ai-code-reviewer-v2
 // @see #document-lifecycle
 // @see #allocator-ownership
@@ -1862,7 +1935,11 @@ This gives DevNotes a stable core while leaving substantial room for project- an
 The canonical form is:
 
 ```text
-@note <id> <category> [status] [priority] [timestamp] [tags] : <title>
+@note <id> <category> : <title>
+@status <status>
+@priority <priority>
+@tags <tag-list>
+@created <timestamp>
 @author <identifier>
 @see <reference>
 
@@ -1875,9 +1952,9 @@ with:
 id         = #identifier
 category   = identifier
 status     = open | resolved | wontfix | deprecated
-priority   = P0 | P1 | P2 | P3
+priority   = critical | high | medium | low   (P0-P3 accepted as aliases)
 timestamp  = ISO 8601
-tags       = #tag,#tag,...
+tags       = #tag #tag ...
 title      = single-line text
 body       = Markdown
 ```

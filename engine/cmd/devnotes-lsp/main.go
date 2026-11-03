@@ -122,10 +122,12 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 					"triggerCharacters": []string{"@", "#", ":", ",", " "},
 					"resolveProvider":   true,
 				},
-				"definitionProvider":      true,
-				"referencesProvider":      true,
-				"documentSymbolProvider":  true,
-				"workspaceSymbolProvider": true,
+				"definitionProvider": true,
+				"referencesProvider": true,
+				// Deliberately no documentSymbolProvider / workspaceSymbolProvider:
+				// generic symbol UIs merge every client, so note symbols would
+				// pollute the host language's outline. The dedicated DevNotes
+				// panel uses devnotes.list instead.
 				"documentLinkProvider": map[string]interface{}{
 					"resolveProvider": false,
 				},
@@ -150,6 +152,7 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 					"commands": []string{
 						"devnotes.list",
 						"devnotes.get",
+						"devnotes.atPosition",
 						"devnotes.graph",
 						"devnotes.nextInFile",
 						"devnotes.prevInFile",
@@ -469,6 +472,13 @@ func (s *server) handle(req *request, w *bufio.Writer) {
 			}
 		case "devnotes.get":
 			result, code, msg := s.getNote(raw)
+			if code != 0 {
+				respondErr(code, msg)
+			} else {
+				respond(result)
+			}
+		case "devnotes.atPosition":
+			result, code, msg := s.atPosition(raw)
 			if code != 0 {
 				respondErr(code, msg)
 			} else {

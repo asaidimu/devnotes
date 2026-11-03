@@ -160,6 +160,29 @@ func (s *server) headerCompletion(uri string, d *doc, entries []NoteEntry, e *No
 // directiveCompletion serves positions inside a note's directive block.
 func (s *server) directiveCompletion(uri string, d *doc, entries []NoteEntry, e *NoteEntry, p string, line, byteCol uint) []map[string]interface{} {
 	switch {
+	case strings.HasPrefix(p, "@status"):
+		var out []map[string]interface{}
+		for st, doc := range statusDocs {
+			out = append(out, map[string]interface{}{
+				"label": st, "kind": 14, "detail": "status", "documentation": doc,
+			})
+		}
+		return out
+	case strings.HasPrefix(p, "@priority"):
+		var out []map[string]interface{}
+		for _, pr := range model.PriorityWords {
+			out = append(out, map[string]interface{}{
+				"label": pr, "kind": 14, "detail": "priority", "documentation": priorityDocs[pr],
+			})
+		}
+		return out
+	case strings.HasPrefix(p, "@tags"):
+		return s.tagCompletion(uri, d, entries, e, p, line, byteCol)
+	case strings.HasPrefix(p, "@created"), strings.HasPrefix(p, "@timestamp"):
+		return []map[string]interface{}{{
+			"label": "today", "kind": 14, "detail": "timestamp",
+			"insertTextFormat": 2, "insertText": today(),
+		}}
 	case strings.HasPrefix(p, "@see"):
 		if idx := strings.LastIndexByte(p, '#'); idx >= 0 {
 			partial := strings.TrimPrefix(p[idx+1:], "#")
@@ -196,7 +219,7 @@ func afterLastSpace(p string) string {
 	return ""
 }
 
-// fieldKeywordItems offers categories, statuses, priorities and "today".
+// fieldKeywordItems offers the category that belongs on the header line.
 func (s *server) fieldKeywordItems(entries []NoteEntry) []map[string]interface{} {
 	var items []map[string]interface{}
 	for _, c := range []string{"observation", "todo", "issue", "context", "lesson", "prompt"} {
@@ -205,20 +228,6 @@ func (s *server) fieldKeywordItems(entries []NoteEntry) []map[string]interface{}
 	for _, cat := range sortedCustomCategories(customCategoryCounts(entries)) {
 		items = addLSPItem(items, cat, 12, "custom category", cat)
 	}
-	for st, doc := range statusDocs {
-		items = append(items, map[string]interface{}{
-			"label": st, "kind": 14, "detail": "status", "documentation": doc,
-		})
-	}
-	for pr, doc := range priorityDocs {
-		items = append(items, map[string]interface{}{
-			"label": pr, "kind": 14, "detail": "priority", "documentation": doc,
-		})
-	}
-	items = append(items, map[string]interface{}{
-		"label": "today", "kind": 14, "detail": "timestamp",
-		"insertTextFormat": 2, "insertText": today(),
-	})
 	return items
 }
 
@@ -230,10 +239,10 @@ var statusDocs = map[string]string{
 }
 
 var priorityDocs = map[string]string{
-	"P0": "Critical — drop everything.",
-	"P1": "High — address in the current cycle.",
-	"P2": "Medium — schedule soon.",
-	"P3": "Low — backlog.",
+	"critical": "Critical — drop everything.",
+	"high":     "High — address in the current cycle.",
+	"medium":   "Medium — schedule soon.",
+	"low":      "Low — backlog.",
 }
 
 // idCompletion offers every note ID in the workspace with proximity-ranked
@@ -446,7 +455,7 @@ func (s *server) snippetItems(entries []NoteEntry) []map[string]interface{} {
 			"@note #${1:id} ${2|" + choices + "|} : ${3:title}\n@author ${4:" + author + "}\n\n${0:body}",
 			"Minimal note header, author directive and body."},
 		{"@note issue", "note-issue",
-			"@note #${1:id} issue open P2 : ${2:title}\n@author ${3:" + author + "}\n@see ${4:#related}\n\n## Problem\n\n${5}\n\n## Recommendation\n\n${6}",
+			"@note #${1:id} issue : ${2:title}\n@status open\n@priority medium\n@author ${3:" + author + "}\n@see ${4:#related}\n\n## Problem\n\n${5}\n\n## Recommendation\n\n${6}",
 			"Full issue template with Problem / Recommendation body."},
 		{"@note todo", "note-todo",
 			"@note #${1:id} todo : ${2:title}\n@author ${3:" + author + "}\n\n${0:What needs to happen.}",
@@ -475,6 +484,10 @@ func (s *server) snippetItems(entries []NoteEntry) []map[string]interface{} {
 func (s *server) directiveItems() []map[string]interface{} {
 	var out []map[string]interface{}
 	out = addLSPItem(out, "@note", 14, "note header", "@note #id category : title")
+	out = addLSPItem(out, "@status", 14, "directive", "@status ")
+	out = addLSPItem(out, "@priority", 14, "directive", "@priority ")
+	out = addLSPItem(out, "@tags", 14, "directive", "@tags ")
+	out = addLSPItem(out, "@created", 14, "directive", "@created ")
 	out = addLSPItem(out, "@author", 14, "directive", "@author ")
 	out = addLSPItem(out, "@see", 14, "directive", "@see ")
 	out = addLSPItem(out, "@assign", 14, "directive", "@assign ")
@@ -655,8 +668,8 @@ func (s *server) codeActions(uri string, startL, startC, endL, endC uint, only [
 			}
 		}
 		// Priority changes.
-		for _, p := range []string{"P0", "P1", "P2", "P3"} {
-			if p == n.Priority {
+		for _, p := range model.PriorityWords {
+			if p == model.PriorityLabel(n.Priority) {
 				continue
 			}
 			if te, ok := priorityEdit(d, e, p); ok {
@@ -667,7 +680,7 @@ func (s *server) codeActions(uri string, startL, startC, endL, endC uint, only [
 		}
 		if n.HasPri {
 			if te, ok := priorityEdit(d, e, ""); ok {
-				if act := editAction("Remove priority (currently: "+n.Priority+")", "refactor.rewrite.devnotes.priority", []textEditB{te}); act != nil {
+				if act := editAction("Remove priority (currently: "+model.PriorityLabel(n.Priority)+")", "refactor.rewrite.devnotes.priority", []textEditB{te}); act != nil {
 					out = append(out, act)
 				}
 			}
@@ -694,6 +707,24 @@ func (s *server) codeActions(uri string, startL, startC, endL, endC uint, only [
 			out = append(out, act)
 		}
 		if ref := refAt(n, startL, startB); ref != nil {
+			if ref.Kind == "id" {
+				if defs := s.entriesWithID(entries, ref.Value); len(defs) > 0 {
+					target := defs[0]
+					title := "Jump to " + ref.Value + " — " + titleOr(target.N())
+					out = append(out, map[string]interface{}{
+						"title": title,
+						"kind":  "refactor.rewrite.devnotes.jump",
+						"command": map[string]interface{}{
+							"title":   title,
+							"command": "devnotes.jumpToNote",
+							"arguments": []interface{}{map[string]interface{}{
+								"uri":   target.URI,
+								"range": s.rangeFor(target),
+							}},
+						},
+					})
+				}
+			}
 			line := int(ref.Range.StartLine)
 			if act := editAction("Remove @see "+ref.Value, "refactor.rewrite.devnotes.reference",
 				[]textEditB{removeLineEdit(line)}); act != nil {

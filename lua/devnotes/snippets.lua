@@ -61,6 +61,18 @@ return {
   s('note-prompt', note_header('prompt')),
 
   -- Directives.
+  s('status', {
+    t('@status '), i(1, 'open'), t({ '', '' }), i(0),
+  }),
+  s('priority', {
+    t('@priority '), i(1, 'medium'), t({ '', '' }), i(0),
+  }),
+  s('tags', {
+    t('@tags #'), i(1, 'tag'), t({ '', '' }), i(0),
+  }),
+  s('created', {
+    t('@created '), i(1, '2026-11-02'), t({ '', '' }), i(0),
+  }),
   s('author', {
     t('@author '), i(1, 'name'), t({ '', '' }), i(0),
   }),
@@ -84,9 +96,17 @@ return {
     t(' : '),
     i(3, 'title'),
     t({ '', '' }),
-    t('@author '), i(4, 'name'),
+    t('@status '), i(4, 'open'),
     t({ '', '' }),
-    t('@see #'), i(5, 'related'),
+    t('@priority '), i(5, 'medium'),
+    t({ '', '' }),
+    t('@tags #'), i(6, 'tag'),
+    t({ '', '' }),
+    t('@created '), i(7, '2026-11-02'),
+    t({ '', '' }),
+    t('@author '), i(8, 'name'),
+    t({ '', '' }),
+    t('@see #'), i(9, 'related'),
     t({ '', '' }),
     t(''),
     t({ '', '' }),

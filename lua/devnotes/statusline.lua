@@ -19,29 +19,43 @@ local M = {}
 local cache = {}  -- bufnr -> { row = <0-based line>, value = <string> }
 local pending = {} -- bufnr -> { row = ... , done = bool }
 
-local function apply(bufnr, row)
-  local results_ok, results = pcall(vim.lsp.buf_request_all, bufnr,
-    'textDocument/documentSymbol',
-    { textDocument = vim.lsp.util.make_text_document_params(bufnr) },
-    function(results)
-      local value = ''
-      for _, res in pairs(results or {}) do
-        for _, sym in ipairs(res.result or {}) do
-          local r = (sym.selectionRange or sym.range or {})
-          local s = (r.start or {}).line or -1
-          local e = (r['end'] or {}).line or -1
-          if row >= s and row <= e then
-            value = sym.detail or ''
-          end
-        end
-      end
-      cache[bufnr] = { row = row, value = value }
-      pending[bufnr] = nil
-      vim.cmd('redrawstatus')
-    end)
-  if not results_ok then
-    pending[bufnr] = nil
+local function devnotes_client(bufnr)
+  for _, client in pairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+    if client.name == 'devnotes' then return client end
   end
+end
+
+local function apply(bufnr, row)
+  local client = devnotes_client(bufnr)
+  if not client then
+    cache[bufnr] = { row = row, value = '' }
+    pending[bufnr] = nil
+    return
+  end
+  local params = {
+    command = 'devnotes.atPosition',
+    arguments = { { uri = vim.uri_from_bufnr(bufnr), line = row } },
+  }
+  local handler = function(err, result)
+    local value = ''
+    if not err and result then
+      local parts = {}
+      if result.category and result.category ~= '' then parts[#parts + 1] = result.category end
+      if result.status and result.status ~= '' then parts[#parts + 1] = result.status end
+      if result.priority and result.priority ~= '' then parts[#parts + 1] = result.priority end
+      value = table.concat(parts, ' · ')
+    end
+    cache[bufnr] = { row = row, value = value }
+    pending[bufnr] = nil
+    vim.cmd('redrawstatus')
+  end
+  local ok
+  if vim.fn.has('nvim-0.11') == 1 then
+    ok = pcall(function() client:request('workspace/executeCommand', params, handler, bufnr) end)
+  else
+    ok = pcall(function() client.request('workspace/executeCommand', params, handler, bufnr) end)
+  end
+  if not ok then pending[bufnr] = nil end
 end
 
 local function refresh()
@@ -53,15 +67,12 @@ local function refresh()
     return
   end
   if pending[bufnr] then return end
-  -- Only refresh for buffers with an attached devnotes client.
-  for _, client in pairs(vim.lsp.get_clients({ bufnr = bufnr })) do
-    if client.name == 'devnotes' then
-      pending[bufnr] = { row = row }
-      vim.schedule(function() apply(bufnr, row) end)
-      return
-    end
+  if not devnotes_client(bufnr) then
+    cache[bufnr] = { row = row, value = '' }
+    return
   end
-  cache[bufnr] = { row = row, value = '' }
+  pending[bufnr] = { row = row }
+  vim.schedule(function() apply(bufnr, row) end)
 end
 
 ---Start the cache-refresh autocmds. Idempotent.

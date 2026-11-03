@@ -63,10 +63,6 @@ var coreStatuses = map[string]bool{
 	"open": true, "resolved": true, "wontfix": true, "deprecated": true,
 }
 
-var corePriorities = map[string]bool{
-	"P0": true, "P1": true, "P2": true, "P3": true,
-}
-
 var coreDirectives = map[string]bool{"author": true, "see": true}
 
 // CustomCategories holds workspace-configured categories (additive to the
@@ -151,16 +147,20 @@ func checkStatus(note *model.Note, out *[]Diagnostic) {
 }
 
 func checkPriority(note *model.Note, out *[]Diagnostic) {
-	if note.HasPri && !corePriorities[note.Priority] {
-		*out = append(*out, Diagnostic{
-			Severity: Error,
-			Code:     "INVALID_PRIORITY",
-			Message: fmt.Sprintf("Note %s has unknown priority %q. Use P0 (critical), P1 (high), P2 (medium) or P3 (low).",
-				note.ID, note.Priority),
-			Range: fieldRange(note, "priority", note.Range),
-			Data:  map[string]any{"value": note.Priority},
-		})
+	if !note.HasPri {
+		return
 	}
+	if _, ok := model.NormalizePriority(note.Priority); ok {
+		return
+	}
+	*out = append(*out, Diagnostic{
+		Severity: Error,
+		Code:     "INVALID_PRIORITY",
+		Message: fmt.Sprintf("Note %s has unknown priority %q. Use one of: critical, high, medium, low "+
+			"(legacy P0-P3 aliases are also accepted).", note.ID, note.Priority),
+		Range: fieldRange(note, "priority", note.Range),
+		Data:  map[string]any{"value": note.Priority},
+	})
 }
 
 func checkTimestamp(note *model.Note, out *[]Diagnostic) {

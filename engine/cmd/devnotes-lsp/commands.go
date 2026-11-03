@@ -31,7 +31,7 @@ func (s *server) listItem(e NoteEntry, refCounts map[string]int, includeBody boo
 		"id":             n.ID,
 		"category":       n.Category,
 		"status":         statusOrOpen(n),
-		"priority":       n.Priority,
+		"priority":       model.PriorityLabel(n.Priority),
 		"timestamp":      n.Timestamp,
 		"tags":           tags,
 		"title":          n.Title,
@@ -178,6 +178,46 @@ func (s *server) listNotes(raw json.RawMessage) (interface{}, int, string) {
 		"total":     total,
 		"truncated": truncated,
 	}, 0, ""
+}
+
+// atPosition implements devnotes.atPosition: the note whose block contains a
+// source line, used by statuslines and other position-aware UI. Returns nil
+// when the cursor is not inside a note.
+func (s *server) atPosition(raw json.RawMessage) (interface{}, int, string) {
+	var args struct {
+		URI  string `json:"uri"`
+		Line int    `json:"line"`
+	}
+	if len(raw) > 0 {
+		var wrapper []json.RawMessage
+		if err := json.Unmarshal(raw, &wrapper); err == nil && len(wrapper) > 0 {
+			raw = wrapper[0]
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, errInvalidParams, "arguments must contain {\"uri\", \"line\"}"
+		}
+	}
+	if args.URI == "" || args.Line < 0 {
+		return nil, errInvalidParams, "arguments must contain {\"uri\", \"line\"}"
+	}
+	d := s.docs[args.URI]
+	if d == nil || d.res == nil {
+		return nil, 0, ""
+	}
+	line := uint(args.Line)
+	for _, loc := range d.res.NoteLocs {
+		r := loc.Note.Range
+		if line < r.StartLine || line > r.EndLine {
+			continue
+		}
+		entries := s.allEntries()
+		_, counts := s.refIndex(entries)
+		e := NoteEntry{Loc: loc, URI: args.URI}
+		item := s.listItem(e, counts, false)
+		item["detail"] = containerName(loc.Note)
+		return item, 0, ""
+	}
+	return nil, 0, ""
 }
 
 // getNote implements devnotes.get.
@@ -442,7 +482,7 @@ func (s *server) exportContext(raw json.RawMessage) (interface{}, int, string) {
 		b.WriteString("## " + n.ID + " — " + titleOr(n) + "\n\n")
 		b.WriteString("- Category: " + n.Category + " · Status: " + statusOrOpen(n))
 		if n.Priority != "" {
-			b.WriteString(" · Priority: " + n.Priority)
+			b.WriteString(" · Priority: " + model.PriorityLabel(n.Priority))
 		}
 		if n.Timestamp != "" {
 			b.WriteString(" · Timestamp: " + n.Timestamp)

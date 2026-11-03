@@ -35,9 +35,19 @@
     }
   },
   {
-    "type": "category",
+    "type": "created_directive",
     "named": true,
-    "fields": {}
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "timestamp_value",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "directive_line",
@@ -52,11 +62,27 @@
           "named": true
         },
         {
+          "type": "created_directive",
+          "named": true
+        },
+        {
           "type": "extension_directive",
           "named": true
         },
         {
+          "type": "priority_directive",
+          "named": true
+        },
+        {
           "type": "see_directive",
+          "named": true
+        },
+        {
+          "type": "status_directive",
+          "named": true
+        },
+        {
+          "type": "tags_directive",
           "named": true
         }
       ]
@@ -92,42 +118,6 @@
     }
   },
   {
-    "type": "extension_field",
-    "named": true,
-    "fields": {}
-  },
-  {
-    "type": "header_field",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "extension_field",
-          "named": true
-        },
-        {
-          "type": "priority",
-          "named": true
-        },
-        {
-          "type": "status",
-          "named": true
-        },
-        {
-          "type": "tags",
-          "named": true
-        },
-        {
-          "type": "timestamp",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "header_line",
     "named": true,
     "fields": {},
@@ -137,10 +127,6 @@
       "types": [
         {
           "type": "category",
-          "named": true
-        },
-        {
-          "type": "header_field",
           "named": true
         },
         {
@@ -180,6 +166,26 @@
         }
       ]
     }
+  },
+  {
+    "type": "priority_directive",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "priority_value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "priority_value",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "reference",
@@ -246,12 +252,27 @@
     }
   },
   {
-    "type": "tag_name",
+    "type": "status_directive",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "status_value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "status_value",
     "named": true,
     "fields": {}
   },
   {
-    "type": "tags",
+    "type": "tag_list",
     "named": true,
     "fields": {},
     "children": {
@@ -264,6 +285,31 @@
         }
       ]
     }
+  },
+  {
+    "type": "tag_name",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "tags_directive",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "tag_list",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "timestamp_value",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "title",
@@ -283,6 +329,10 @@
     "named": false
   },
   {
+    "type": "=",
+    "named": false
+  },
+  {
     "type": "@",
     "named": false
   },
@@ -299,12 +349,16 @@
     "named": true
   },
   {
+    "type": "category",
+    "named": true
+  },
+  {
     "type": "id",
     "named": true
   },
   {
     "type": "priority",
-    "named": true
+    "named": false
   },
   {
     "type": "see",
@@ -312,11 +366,11 @@
   },
   {
     "type": "status",
-    "named": true
+    "named": false
   },
   {
-    "type": "timestamp",
-    "named": true
+    "type": "tags",
+    "named": false
   },
   {
     "type": "url",

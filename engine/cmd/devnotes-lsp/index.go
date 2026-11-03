@@ -237,8 +237,18 @@ func matchEntry(e NoteEntry, f listFilter, root string, includeBody bool) bool {
 			return false
 		}
 	}
-	if len(f.Priority) > 0 && !contains(f.Priority, n.Priority) {
-		return false
+	if len(f.Priority) > 0 {
+		want, _ := model.NormalizePriority(n.Priority)
+		ok := false
+		for _, p := range f.Priority {
+			if got, valid := model.NormalizePriority(p); valid && got == want {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
 	}
 	for _, tag := range f.Tag { // AND semantics across tags
 		want := strings.TrimPrefix(tag, "#")
@@ -299,17 +309,7 @@ func matchEntry(e NoteEntry, f listFilter, root string, includeBody bool) bool {
 }
 
 func priorityRank(p string) int {
-	switch p {
-	case "P0":
-		return 0
-	case "P1":
-		return 1
-	case "P2":
-		return 2
-	case "P3":
-		return 3
-	}
-	return 4
+	return model.PriorityRank(p)
 }
 
 func statusRank(st string) int {

@@ -45,7 +45,7 @@ func metaLine(n model.Note) string {
 	}
 	parts = append(parts, "`"+st+"`")
 	if n.Priority != "" {
-		parts = append(parts, "`"+n.Priority+"`")
+		parts = append(parts, "`"+model.PriorityLabel(n.Priority)+"`")
 	}
 	if n.Timestamp != "" {
 		parts = append(parts, "`"+n.Timestamp+"`")
@@ -66,7 +66,7 @@ func containerName(n model.Note) string {
 	}
 	parts = append(parts, st)
 	if n.Priority != "" {
-		parts = append(parts, n.Priority)
+		parts = append(parts, model.PriorityLabel(n.Priority))
 	}
 	return strings.Join(parts, " · ")
 }

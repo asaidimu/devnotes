@@ -18,7 +18,7 @@ local function default_path()
   return vim.fn.fnamemodify(p, ':h:h:h')
 end
 
-local opts = { path = default_path(), load_snippets = true, lsp = true, symbols = {} }
+local opts = { path = default_path(), load_snippets = true, lsp = true, hover_preview = true, symbols = {} }
 
 local HOST_FILETYPES = {
   go = true,
@@ -85,7 +85,7 @@ function M.setup(user)
   if opts.lsp ~= false then
     pcall(function()
       local lsp = require('devnotes.lsp')
-      lsp.setup_attach()
+      lsp.setup_attach({ hover_preview = opts.hover_preview })
       lsp.enable()
 
       -- 5a. Symbol window (lua/devnotes/symbols.lua): a dedicated notes
@@ -104,6 +104,9 @@ function M.setup(user)
       vim.api.nvim_create_user_command('DevNotesSymbolsClose', function()
         require('devnotes.symbols').close()
       end, { desc = 'DevNotes: close the symbol window' })
+      vim.api.nvim_create_user_command('DevNotesPreview', function()
+        lsp.preview()
+      end, { desc = 'DevNotes: floating preview of the note at the cursor' })
       vim.api.nvim_create_user_command('DevNotesReferences', function()
         lsp.list_references()
       end, { desc = 'DevNotes: browse references to the note ID under the cursor' })

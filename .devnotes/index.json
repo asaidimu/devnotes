@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-02T08:33:16.756728755Z",
+  "root": "/tmp/opencode/dnproj",
+  "notes": {
+    "test-issue-e88de8f6": {
+      "id": "test-issue-e88de8f6",
+      "category": "issue",
+      "status": "open",
+      "priority": "high",
+      "tags": [
+        "alpha",
+        "beta"
+      ],
+      "title": "Test issue",
+      "body": "hello\n",
+      "authors": [
+        "jane"
+      ],
+      "references": [
+        "#other"
+      ],
+      "location": {
+        "file": "/tmp/opencode/dnproj/a.go",
+        "startLine": 1,
+        "startCol": 3,
+        "endLine": 7,
+        "endCol": 3
+      },
+      "hash": "66d67065ce62c3ef"
+    }
+  },
+  "files": {
+    "/tmp/opencode/dnproj/a.go": {
+      "hash": "f468daac2ecc27cb",
+      "noteIds": [
+        "test-issue-e88de8f6"
+      ]
+    }
+  }
+}

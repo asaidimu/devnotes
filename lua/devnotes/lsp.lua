@@ -43,10 +43,14 @@ end
 -- ---------------------------------------------------------------------------
 
 ---Floating preview of the hover contents at the cursor (note header or an
----@see reference). Bound to <C-p> on LspAttach.
+---@see reference). Bound to <C-p> on LspAttach and to the CursorHold dwell
+---preview when the cursor rests on an ID.
 function M.preview()
-  local params = vim.lsp.util.make_position_params()
-  vim.lsp.buf_request(0, 'textDocument/hover', params, function(err, result)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local client = vim.lsp.get_clients({ bufnr = bufnr, name = 'devnotes' })[1]
+  if not client then return end
+  local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
+  client:request('textDocument/hover', params, function(err, result)
     if err or not result or not result.contents then
       return
     end
@@ -58,8 +62,29 @@ function M.preview()
       value = result.contents
       kind = 'markdown'
     end
-    vim.lsp.util.open_floating_preview(value, kind, { border = 'rounded', max_width = 100 })
-  end)
+    -- nvim 0.12 requires a list of lines rather than a raw string here.
+    local lines = vim.split(value, '\n', { plain = true })
+    vim.lsp.util.open_floating_preview(lines, kind, {
+      border = 'rounded',
+      max_width = 100,
+      wrap = true,
+      focusable = false,
+    })
+  end, bufnr)
+end
+
+---True when the cursor is on a `#id` token (the only place a dwell preview
+---makes sense; moving through prose should not pop docs).
+local function cursor_on_id()
+  local line = vim.api.nvim_get_current_line()
+  local col = vim.api.nvim_win_get_cursor(0)[2]
+  local start = 1
+  while true do
+    local s, e = line:find('#[%w%-_]+', start)
+    if not s then return false end
+    if col >= s - 1 and col < e then return true end
+    start = e + 1
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -74,6 +99,11 @@ end
 ---Open the picker over a devnotes.list result set.
 function M.pick(filter, title)
   filter = filter or {}
+  if next(filter) == nil then
+    -- Lua encodes an empty table as [] over JSON-RPC; the server expects an
+    -- object, so use vim.empty_dict() to force {}.
+    filter = vim.empty_dict()
+  end
   title = title or 'DevNotes'
   local params = { command = 'devnotes.list', arguments = { { filter = filter, sort = 'default' } } }
   vim.lsp.buf_request(0, 'workspace/executeCommand', params, function(err, result)
@@ -186,8 +216,29 @@ function M.statusline()
 end
 
 -- ---------------------------------------------------------------------------
+-- Client-side commands
+-- ---------------------------------------------------------------------------
+
+---Handlers for commands emitted by DevNotes code actions. vim.lsp.commands
+---runs these locally, so "Jump to <note>" can move the cursor instead of
+---round-tripping through workspace/executeCommand.
+function M.setup_commands()
+  vim.lsp.commands['devnotes.jumpToNote'] = function(command)
+    local arg = (command.arguments or {})[1] or {}
+    if not arg.uri then return end
+    local bufnr = vim.uri_to_bufnr(arg.uri)
+    vim.fn.bufload(bufnr)
+    vim.api.nvim_set_current_buf(bufnr)
+    local start = (arg.range or {}).start or {}
+    vim.api.nvim_win_set_cursor(0, { (start.line or 0) + 1, start.character or 0 })
+  end
+end
+
+-- ---------------------------------------------------------------------------
 -- Attach hook: buffer-local mappings for buffers with the server attached.
 -- ---------------------------------------------------------------------------
+
+local hover_group = vim.api.nvim_create_augroup('DevNotesLspHover', { clear = true })
 
 local function on_attach(client, bufnr)
   -- <C-p> reference preview.
@@ -199,14 +250,35 @@ local function on_attach(client, bufnr)
   end, { buffer = bufnr, silent = true, desc = 'DevNotes: note actions' })
 end
 
+---Show the note preview after the cursor rests on an `#id` token, like an
+---IDE's hover documentation. Delay is Neovim's `updatetime`.
+local function setup_hover_dwell(bufnr)
+  vim.api.nvim_create_autocmd('CursorHold', {
+    group = hover_group,
+    buffer = bufnr,
+    desc = 'DevNotes: dwell preview on #id',
+    callback = function()
+      if vim.fn.pumvisible() == 1 then return end
+      if not cursor_on_id() then return end
+      M.preview()
+    end,
+  })
+end
+
 ---Register the LspAttach hook for devnotes clients. Safe to call once.
-function M.setup_attach()
+---@param opts? { hover_preview?: boolean } hover_preview defaults to true.
+function M.setup_attach(opts)
+  opts = opts or {}
+  M.setup_commands()
   vim.api.nvim_create_autocmd('LspAttach', {
     group = vim.api.nvim_create_augroup('DevNotesLspAttach', { clear = true }),
     callback = function(args)
       local client = vim.lsp.get_client_by_id(args.data.client_id)
       if client and client.name == 'devnotes' then
         on_attach(client, args.buf)
+        if opts.hover_preview ~= false then
+          setup_hover_dwell(args.buf)
+        end
       end
     end,
   })
