@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/asaidimu/devnotes/compare/v0.3.0...v0.4.0) (2026-11-12)
+
+
+### Features
+
+* **grammar:** overhaul metadata syntax and named priorities ([e6f365e](https://github.com/asaidimu/devnotes/commit/e6f365e28db7a8ba89f139a4955e9a5d630dbce7))
+
 # [0.3.0](https://github.com/asaidimu/devnotes/compare/v0.2.0...v0.3.0) (2026-11-01)
 
 
