@@ -6,9 +6,11 @@
 package main
 
 import (
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/asaidimu/devnotes/engine/internal/migrate"
 	"github.com/asaidimu/devnotes/engine/internal/model"
 	"github.com/asaidimu/devnotes/engine/internal/noteedit"
 	"github.com/asaidimu/devnotes/engine/internal/pipeline"
@@ -60,33 +62,79 @@ func (e *NoteEntry) prefixAt(line int) string {
 	return ""
 }
 
-// noteMetaBody locates the structural lines of a note in the file:
-//
-//	metaEnd  — last line of the metadata block (header + directives)
-//	sepLine  — the blank separator line, or -1 when the separator exists
-//	           only in normalized form (single-line host comment notes)
-//	bodyStart/bodyEnd — inclusive body bounds, or -1 when there is no body
-func noteMetaBody(d *doc, e *NoteEntry) (metaEnd, sepLine, bodyStart, bodyEnd int) {
+// noteLayout locates the structural lines of a note in the file. Directives
+// may appear anywhere at column 0, so they are tracked individually rather
+// than as one contiguous block before a mandatory separator.
+type noteLayout struct {
+	header     int
+	directives []int // sorted line numbers
+	firstBody  int   // first body line, including a canonical blank separator
+	bodyStart  int   // first non-blank body line
+	lastBody   int
+}
+
+func noteLayoutFor(d *doc, e *NoteEntry) noteLayout {
 	lines := docLines(d)
 	start := int(e.N().Range.StartLine)
 	end := lastLineOf(e.N())
 	if end >= len(lines) {
 		end = len(lines) - 1
 	}
-	for ln := start + 1; ln <= end; ln++ {
-		if isBlankAfterPrefix(lines[ln], e.prefixAt(ln)) {
-			return ln - 1, ln, ln + 1, end
+	l := noteLayout{header: start, firstBody: -1, bodyStart: -1, lastBody: -1}
+	directive := map[int]bool{}
+	for _, dr := range e.N().DirectiveRanges {
+		ln := int(dr.StartLine)
+		if ln > start && ln <= end {
+			directive[ln] = true
+			l.directives = append(l.directives, ln)
 		}
 	}
-	return end, -1, -1, -1
+	sort.Ints(l.directives)
+	for ln := start + 1; ln <= end; ln++ {
+		if directive[ln] {
+			continue
+		}
+		if l.firstBody < 0 {
+			l.firstBody = ln
+		}
+		if l.bodyStart < 0 && !isBlankAfterPrefix(lines[ln], e.prefixAt(ln)) {
+			l.bodyStart = ln
+		}
+		l.lastBody = ln
+	}
+	return l
 }
 
 func isBlankAfterPrefix(line []byte, prefix string) bool {
 	if len(prefix) > len(line) {
 		return false
 	}
-	rest := string(line[len(prefix):])
-	return strings.TrimRight(rest, " \t\r") == ""
+	return strings.TrimRight(string(line[len(prefix):]), " \t\r") == ""
+}
+
+// isDirectiveLine reports whether a source line holds a parsed directive.
+// It replaces the old "before the separator" test now that directives may
+// appear anywhere at column 0.
+func isDirectiveLine(e *NoteEntry, line int) bool {
+	for _, dr := range e.N().DirectiveRanges {
+		if int(dr.StartLine) == line {
+			return true
+		}
+	}
+	return false
+}
+
+// noteMetaBody is the compatibility view used by folding. sepLine now means
+// "first non-directive line", which is the nearest equivalent of the former
+// separator. Callers that need exact directive positions should use
+// noteLayoutFor or isDirectiveLine.
+func noteMetaBody(d *doc, e *NoteEntry) (metaEnd, sepLine, bodyStart, bodyEnd int) {
+	l := noteLayoutFor(d, e)
+	metaEnd = l.header
+	if len(l.directives) > 0 {
+		metaEnd = l.directives[len(l.directives)-1]
+	}
+	return metaEnd, l.firstBody, l.bodyStart, l.lastBody
 }
 
 // canonicalMetadata renders the canonical metadata lines for a note:
@@ -119,10 +167,14 @@ func canonicalMetadata(e *NoteEntry) []string {
 	for _, a := range n.Authors {
 		out = append(out, "@author "+a)
 	}
+	inline := map[model.Range]bool{}
+	for _, r := range n.InlineRefs {
+		inline[r.Range] = true
+	}
 	seen := map[string]bool{}
 	for _, r := range n.Refs {
-		if r.Value == "" {
-			continue
+		if r.Value == "" || inline[r.Range] {
+			continue // inline @see stays in the body
 		}
 		key := r.Kind + "\x00" + r.Value
 		if seen[key] {
@@ -141,65 +193,108 @@ func canonicalMetadata(e *NoteEntry) []string {
 	return out
 }
 
-// formatNoteEdits computes the text edits that canonicalize one note:
-// the metadata block is rewritten, body lines only lose trailing whitespace.
-func formatNoteEdits(d *doc, e *NoteEntry) []textEditB {
+// canonicalMetadataWithLegacy folds positional fields from a legacy header
+// into the canonical metadata block. The parser only sees the canonical
+// header, so formatting a legacy note with canonicalMetadata alone silently
+// drops its status/priority/tags/date/extension tokens.
+func canonicalMetadataWithLegacy(lines [][]byte, start int, e *NoteEntry) []string {
 	meta := canonicalMetadata(e)
-	if meta == nil {
-		return nil
+	if meta == nil || start < 0 || start >= len(lines) {
+		return meta
 	}
-	start := int(e.N().Range.StartLine)
-	metaEnd, _, bodyStart, bodyEnd := noteMetaBody(d, e)
-	lines := docLines(d)
-
-	var out []textEditB
-	var sb strings.Builder
-	sb.WriteString(meta[0])
-	for i := 1; i < len(meta); i++ {
-		sb.WriteString("\n")
-		sb.WriteString(e.prefixAt(start + i))
-		sb.WriteString(meta[i])
+	h, ok := migrate.LegacyHeader(string(lines[start]))
+	if !ok {
+		return meta
 	}
-	endCol := uint(len(lines[metaEnd]))
-	out = append(out, textEditB{
-		StartLine: uint(start), StartCol: e.N().Range.StartCol,
-		EndLine: uint(metaEnd), EndCol: endCol,
-		NewText: sb.String(),
-	})
-
-	if bodyStart >= 0 {
-		for ln := bodyStart; ln <= bodyEnd && ln < len(lines); ln++ {
-			prefixLen := len(e.prefixAt(ln))
-			if prefixLen > len(lines[ln]) {
-				continue
-			}
-			content := string(lines[ln][prefixLen:])
-			trimmed := strings.TrimRight(content, " \t\r")
-			if content != trimmed {
-				out = append(out, textEditB{
-					StartLine: uint(ln), StartCol: uint(prefixLen),
-					EndLine: uint(ln), EndCol: uint(len(lines[ln])),
-					NewText: trimmed,
-				})
-			}
+	// The parser's error recovery may assign the wrong category/title to a
+	// legacy header, so rebuild the first line from the source text itself.
+	meta[0] = "@note " + h.ID + " " + h.Category + " : " + h.Title
+	seen := make(map[string]bool, len(meta)+len(h.Directives))
+	out := make([]string, 0, len(meta)+len(h.Directives))
+	out = append(out, meta[0])
+	seen[meta[0]] = true
+	for _, d := range append(h.Directives, meta[1:]...) {
+		if !seen[d] {
+			out = append(out, d)
+			seen[d] = true
 		}
 	}
 	return out
 }
 
-// insertDirectiveEdit inserts a directive line at the end of the note's
-// directive block (before the separator when one exists in the file).
-func insertDirectiveEdit(d *doc, e *NoteEntry, directive string) textEditB {
-	metaEnd, sep, _, _ := noteMetaBody(d, e)
+// formatNoteEdits computes the text edits that canonicalize one note:
+// directives are hoisted into a canonical block after the header, and body
+// lines only lose trailing whitespace. Inline @see references stay in place.
+func formatNoteEdits(d *doc, e *NoteEntry) []textEditB {
 	lines := docLines(d)
-	if sep >= 0 {
-		return textEditB{
-			StartLine: uint(sep), StartCol: 0,
-			EndLine: uint(sep), EndCol: 0,
-			NewText: e.prefixAt(sep) + directive + "\n",
+	start := int(e.N().Range.StartLine)
+	meta := canonicalMetadataWithLegacy(lines, start, e)
+	if meta == nil || start >= len(lines) {
+		return nil
+	}
+	layout := noteLayoutFor(d, e)
+
+	var out []textEditB
+	prefix := e.prefixAt(start)
+
+	// Rewrite only the header line.
+	out = append(out, textEditB{
+		StartLine: uint(start), StartCol: e.N().Range.StartCol,
+		EndLine: uint(start), EndCol: uint(len(lines[start])),
+		NewText: meta[0],
+	})
+
+	// Insert canonical directives immediately after the header.
+	if len(meta) > 1 {
+		var sb strings.Builder
+		for _, m := range meta[1:] {
+			sb.WriteString("\n")
+			sb.WriteString(prefix)
+			sb.WriteString(m)
+		}
+		out = append(out, textEditB{
+			StartLine: uint(start), StartCol: uint(len(lines[start])),
+			EndLine: uint(start), EndCol: uint(len(lines[start])),
+			NewText: sb.String(),
+		})
+	}
+
+	// Remove every original directive line; the canonical block replaces it.
+	for _, ln := range layout.directives {
+		if ln < len(lines) {
+			out = append(out, removeLineEdit(ln))
 		}
 	}
-	ln := metaEnd
+
+	// Body lines only lose trailing whitespace.
+	for ln := layout.firstBody; ln >= 0 && ln <= layout.lastBody && ln < len(lines); ln++ {
+		prefixLen := len(e.prefixAt(ln))
+		if prefixLen > len(lines[ln]) {
+			continue
+		}
+		content := string(lines[ln][prefixLen:])
+		trimmed := strings.TrimRight(content, " \t\r")
+		if content != trimmed {
+			out = append(out, textEditB{
+				StartLine: uint(ln), StartCol: uint(prefixLen),
+				EndLine: uint(ln), EndCol: uint(len(lines[ln])),
+				NewText: trimmed,
+			})
+		}
+	}
+	return out
+}
+
+// insertDirectiveEdit inserts a directive after the last existing directive
+// (or after the header). Directives may be interleaved with body text, so the
+// first body line is no longer a reliable insertion anchor.
+func insertDirectiveEdit(d *doc, e *NoteEntry, directive string) textEditB {
+	lines := docLines(d)
+	l := noteLayoutFor(d, e)
+	ln := l.header
+	if len(l.directives) > 0 {
+		ln = l.directives[len(l.directives)-1]
+	}
 	if ln >= len(lines) {
 		ln = len(lines) - 1
 	}

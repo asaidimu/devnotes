@@ -29,6 +29,13 @@ lines: `@status` (`open`/`resolved`/`wontfix`/`deprecated`), `@priority`
 alias), `@author`, and `@see`. Legacy `P0`–`P3` values are accepted in
 `@priority`, but canonical output uses the words.
 
+Directives start at the beginning of a normalized line (column 0) and may
+appear anywhere in the note, including after body text. Indented lines such as
+`  @status open` are body text; to write directive-looking text at column 0,
+escape the `@` (`\@status open`). The blank line shown above is optional — it
+is only for readability. `@see` may also appear inline in titles or prose (`See
+@see #other-id`), with a strict `#id`, URL, or quoted target.
+
 Notes written in the old positional style can be rewritten in place:
 
 ```sh

@@ -160,16 +160,13 @@ func trimToFirstNote(content string, sm normalize.SourceMap) (string, normalize.
 }
 
 // ensureTerminator guarantees the normalized content parses as complete notes:
-// the grammar requires a blank separator line after metadata, so content must
-// end with a newline and, if it has no trailing blank line, one is appended.
+// every header, directive, and body line ends with a newline. No blank
+// separator line is required by the grammar.
 func ensureTerminator(s string) string {
-	if strings.HasSuffix(s, "\n\n") {
+	if strings.HasSuffix(s, "\n") {
 		return s
 	}
-	if strings.HasSuffix(s, "\n") {
-		return s + "\n"
-	}
-	return s + "\n\n"
+	return s + "\n"
 }
 
 func regionsFor(lang string, src []byte) ([]normalize.Region, error) {
@@ -224,6 +221,9 @@ func mapNote(n *model.Note, sm *normalize.SourceMap) {
 	}
 	for i := range n.Refs {
 		n.Refs[i].Range = sourceRange(n.Refs[i].Range, *sm)
+	}
+	for i := range n.InlineRefs {
+		n.InlineRefs[i].Range = sourceRange(n.InlineRefs[i].Range, *sm)
 	}
 	for i := range n.ExtDirs {
 		n.ExtDirs[i].Range = sourceRange(n.ExtDirs[i].Range, *sm)

@@ -12,7 +12,7 @@ Minimal note (SPEC 48)
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Full metadata via directives (SPEC 10/49)
@@ -46,7 +46,7 @@ Full metadata via directives (SPEC 10/49)
         (tag_list
           (tag_name)
           (tag_name))))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Equivalent metadata orderings (SPEC 10)
@@ -86,7 +86,7 @@ Equivalent metadata orderings (SPEC 10)
         (tag_list
           (tag_name)
           (tag_name))))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -106,7 +106,7 @@ Equivalent metadata orderings (SPEC 10)
     (directive_line
       (created_directive
         (timestamp_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 All core statuses (SPEC 11)
@@ -135,7 +135,7 @@ All core statuses (SPEC 11)
     (directive_line
       (status_directive
         (status_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -144,7 +144,7 @@ All core statuses (SPEC 11)
     (directive_line
       (status_directive
         (status_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -153,7 +153,7 @@ All core statuses (SPEC 11)
     (directive_line
       (status_directive
         (status_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -162,7 +162,7 @@ All core statuses (SPEC 11)
     (directive_line
       (status_directive
         (status_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 All core priorities (SPEC 12)
@@ -191,7 +191,7 @@ All core priorities (SPEC 12)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -200,7 +200,7 @@ All core priorities (SPEC 12)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -209,7 +209,7 @@ All core priorities (SPEC 12)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -218,7 +218,7 @@ All core priorities (SPEC 12)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Legacy priority aliases still parse (SPEC 12)
@@ -241,7 +241,7 @@ Legacy priority aliases still parse (SPEC 12)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -250,7 +250,7 @@ Legacy priority aliases still parse (SPEC 12)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Timestamp variants (SPEC 13)
@@ -282,7 +282,7 @@ Timestamp variants (SPEC 13)
     (directive_line
       (created_directive
         (timestamp_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -291,7 +291,7 @@ Timestamp variants (SPEC 13)
     (directive_line
       (created_directive
         (timestamp_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -300,7 +300,7 @@ Timestamp variants (SPEC 13)
     (directive_line
       (created_directive
         (timestamp_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -309,7 +309,7 @@ Timestamp variants (SPEC 13)
     (directive_line
       (created_directive
         (timestamp_value)))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -318,7 +318,7 @@ Timestamp variants (SPEC 13)
     (directive_line
       (created_directive
         (timestamp_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Tags with commas and whitespace (SPEC 14)
@@ -347,7 +347,7 @@ Tags with commas and whitespace (SPEC 14)
           (tag_name)
           (tag_name)
           (tag_name))))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -358,7 +358,7 @@ Tags with commas and whitespace (SPEC 14)
         (tag_list
           (tag_name)
           (tag_name))))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -369,7 +369,7 @@ Tags with commas and whitespace (SPEC 14)
         (tag_list
           (tag_name)
           (tag_name))))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Unknown directive values are preserved for validation (SPEC 10/27)
@@ -394,7 +394,7 @@ Unknown directive values are preserved for validation (SPEC 10/27)
       (tags_directive
         (tag_list
           (tag_name))))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Custom categories (SPEC 9.2)
@@ -412,13 +412,13 @@ Custom categories (SPEC 9.2)
       (id)
       (category)
       (title))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Title with additional colons (SPEC 7/15)
@@ -434,7 +434,7 @@ Title with additional colons (SPEC 7/15)
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Empty title yields MISSING title node (SPEC 15/31)
@@ -451,7 +451,7 @@ Empty title yields MISSING title node (SPEC 15/31)
       (category)
       (title
         (MISSING "title_token1")))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Multi-space delimiter (ABNF WS ":" WS, SPEC 26)
@@ -467,7 +467,7 @@ Multi-space delimiter (ABNF WS ":" WS, SPEC 26)
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Minimal one-line note without blank separator (SPEC 48)
@@ -483,4 +483,4 @@ Minimal one-line note without blank separator (SPEC 48)
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))

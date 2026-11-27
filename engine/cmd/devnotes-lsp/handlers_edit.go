@@ -76,16 +76,14 @@ func (s *server) completionItems(uri string, line, char uint) []map[string]inter
 
 	// ---- Parsed note context -------------------------------------------
 	if e != nil {
-		_, sep, _, _ := noteMetaBody(d, e)
-		if sep >= 0 && int(line) >= sep {
-			return nil // body or separator: no completion inside a note body
-		}
 		n := e.N()
 		if int(line) == int(n.Range.StartLine) {
 			return s.headerCompletion(uri, d, entries, e, p, line, byteCol, lineBytes)
 		}
-		// Directive block.
-		return s.directiveCompletion(uri, d, entries, e, p, line, byteCol)
+		if isDirectiveLine(e, int(line)) {
+			return s.directiveCompletion(uri, d, entries, e, p, line, byteCol)
+		}
+		return nil // body text: no completion
 	}
 
 	// ---- Text fallback (no parsed note at the cursor) -------------------

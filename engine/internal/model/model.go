@@ -3,6 +3,7 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/asaidimu/devnotes/engine/internal/cst"
@@ -54,7 +55,11 @@ type Note struct {
 	NoTitle   bool
 	Authors   []string
 	Refs      []Reference
-	ExtDirs   []Directive
+	// InlineRefs are @see references found in prose (titles and body lines).
+	// They are also present in Refs; formatters must not hoist them into
+	// directive lines.
+	InlineRefs []Reference
+	ExtDirs    []Directive
 	Body      string
 	HasBody   bool
 	Range     Range
@@ -84,8 +89,12 @@ type ParseDiag struct {
 }
 
 const malformedHeaderMsg = "This note could not be parsed. A note starts with a header line " +
-	"\"@note #id category : Title\", followed by optional @status/@priority/@tags/@created, " +
-	"@author/@see directives, a blank line, and the body."
+	"\"@note #id category : Title\", followed by directives at the start of a line " +
+	"(@status/@priority/@tags/@created/@author/@see or extensions) and body text."
+
+// Inline @see references are the only directive-like syntax allowed inside
+// body text. The target is a single token; quoted values allow spaces.
+var inlineSeeRe = regexp.MustCompile(`@see[ \t]+(#[A-Za-z0-9_-]+|[A-Za-z][A-Za-z0-9+.-]*:[^\r\n\t ]+|"[^"\r\n]+"|[^\r\n\t ]+)`)
 
 func r(n *sitter.Node) Range {
 	sp := n.StartPosition()
@@ -179,14 +188,68 @@ func buildNote(src []byte, blk *sitter.Node) Note {
 			n.DirectiveRanges = append(n.DirectiveRanges, r(child))
 			buildDirective(src, child, &n)
 		case "body_line":
+			extractInlineSee(src, child, &n)
 			bodyLines = append(bodyLines, bodyLineText(src, child))
 		}
+	}
+	// A leading blank line is the canonical visual separator after the
+	// header/directives; it is not body content.
+	for len(bodyLines) > 0 && strings.TrimSpace(bodyLines[0]) == "" {
+		bodyLines = bodyLines[1:]
+	}
+	for i, line := range bodyLines {
+		bodyLines[i] = unescapeAt(line)
 	}
 	if len(bodyLines) > 0 {
 		n.Body = strings.Join(bodyLines, "\n")
 		n.HasBody = true
 	}
 	return n
+}
+
+// extractInlineSee records @see references that appear in prose (titles and
+// body lines). Directive lines are handled separately, so every reference is
+// collected exactly once and in source order.
+func extractInlineSee(src []byte, node *sitter.Node, n *Note) {
+	text := cst.NodeText(node, src)
+	loc := r(node)
+	for _, m := range inlineSeeRe.FindAllStringSubmatchIndex(text, -1) {
+		start, end := m[2], m[3]
+		if start > 0 && text[start-1] == '\\' {
+			continue // escaped directive-looking text
+		}
+		value := text[start:end]
+		// In prose, a URL or token is usually followed by sentence
+		// punctuation; do not swallow it as part of the reference.
+		trimmed := strings.TrimRight(value, ".,;:!?)]}")
+		end = start + len(trimmed)
+		value = trimmed
+		kind := "other"
+		switch {
+		case strings.HasPrefix(value, "#"):
+			kind = "id"
+		case strings.Contains(value, "://"):
+			kind = "url"
+		case strings.HasPrefix(value, `"`):
+			value = strings.Trim(value, `"`)
+		}
+		ref := Reference{
+			Kind:  kind,
+			Value: value,
+			Range: Range{
+				StartLine: loc.StartLine,
+				StartCol:  loc.StartCol + uint(start),
+				EndLine:   loc.StartLine,
+				EndCol:    loc.StartCol + uint(end),
+			},
+		}
+		n.Refs = append(n.Refs, ref)
+		n.InlineRefs = append(n.InlineRefs, ref)
+	}
+}
+
+func unescapeAt(line string) string {
+	return strings.ReplaceAll(line, `\@`, "@")
 }
 
 func buildHeader(src []byte, header *sitter.Node, n *Note) {
@@ -202,6 +265,7 @@ func buildHeader(src []byte, header *sitter.Node, n *Note) {
 			n.Title = cst.NodeText(child, src)
 			n.TitleRange = r(child)
 			n.NoTitle = child.HasError()
+			extractInlineSee(src, child, n)
 		}
 	}
 }
@@ -287,9 +351,8 @@ func bodyLineText(src []byte, bl *sitter.Node) string {
 	if bt := namedChild(bl, "body_text"); bt != nil {
 		return cst.NodeText(bt, src)
 	}
-	// Bare "@note" line (SPEC 24 escaping is handled upstream).
-	if trimmed := strings.TrimRight(cst.NodeText(bl, src), "\r\n"); trimmed == "@note" {
-		return "@note"
+	if bt := namedChild(bl, "body_at_note"); bt != nil {
+		return cst.NodeText(bt, src)
 	}
 	return "" // blank line
 }

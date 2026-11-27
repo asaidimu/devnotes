@@ -28,6 +28,10 @@
       "required": false,
       "types": [
         {
+          "type": "body_at_note",
+          "named": true
+        },
+        {
           "type": "body_text",
           "named": true
         }
@@ -159,10 +163,6 @@
         {
           "type": "header_line",
           "named": true
-        },
-        {
-          "type": "separator_line",
-          "named": true
         }
       ]
     }
@@ -229,11 +229,6 @@
         }
       ]
     }
-  },
-  {
-    "type": "separator_line",
-    "named": true,
-    "fields": {}
   },
   {
     "type": "source_file",
@@ -337,12 +332,12 @@
     "named": false
   },
   {
-    "type": "@note",
+    "type": "author",
     "named": false
   },
   {
-    "type": "author",
-    "named": false
+    "type": "body_at_note",
+    "named": true
   },
   {
     "type": "body_text",

@@ -15,7 +15,7 @@ Multiple notes in one file (SPEC 4.2)
       (id)
       (category)
       (title))
-    (separator_line))
+    (body_line))
   (note_block
     (header_line
       (id)
@@ -24,7 +24,7 @@ Multiple notes in one file (SPEC 4.2)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Canonical full note (SPEC 49)
@@ -81,7 +81,7 @@ nested documents.
       (see_directive
         (reference
           (id))))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))
     (body_line)

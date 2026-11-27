@@ -31,52 +31,51 @@ function check(name, actual, expected) {
 check('minimal note', parse('@note #x observation : Example\n\n'), `(source_file
   (note_block
     (header_line (id) (category) (title))
-    (separator_line)))`);
+    (body_line)))`);
 
-check('full header', parse('@note #pool-ownership issue open P1 2026-08-10T16:29+03:00 #pooling,#memory : Nested documents can outlive their parent pool\n\n'), `(source_file
+check('full metadata directives', parse('@note #pool-ownership issue : Nested documents can outlive their parent pool\n@status open\n@priority high\n@created 2026-08-10T16:29+03:00\n@tags #pooling #memory\n\n'), `(source_file
   (note_block
-    (header_line
-      (id) (category)
-      (header_field (status))
-      (header_field (priority))
-      (header_field (timestamp))
-      (header_field (tags (tag_name) (tag_name)))
-      (title))
-    (separator_line)))`);
+    (header_line (id) (category) (title))
+    (directive_line (status_directive (status_value)))
+    (directive_line (priority_directive (priority_value)))
+    (directive_line (created_directive (timestamp_value)))
+    (directive_line (tags_directive (tag_list (tag_name) (tag_name))))
+    (body_line)))`);
 
 check('directives and body', parse('@note #pool observation : Pool ownership\n@author jane\n@see #document-lifecycle\n\nbody text\n'), `(source_file
   (note_block
     (header_line (id) (category) (title))
     (directive_line (author_directive (author_value)))
     (directive_line (see_directive (reference (id))))
-    (separator_line)
+    (body_line)
     (body_line (body_text))))`);
 
 check('title with colons', parse('@note #x observation : Why A : B is necessary\n\n'), `(source_file
   (note_block
     (header_line (id) (category) (title))
-    (separator_line)))`);
+    (body_line)))`);
 
 check('crlf and blank body lines', parse('@note #a observation : first\r\n\r\npara1\r\n\r\n@note #b todo : second\r\n\r\n'), `(source_file
   (note_block
     (header_line (id) (category) (title))
-    (separator_line)
+    (body_line)
     (body_line (body_text))
     (body_line))
   (note_block
     (header_line (id) (category) (title))
-    (separator_line)))`);
+    (body_line)))`);
 
 check('escape preserved in body', parse('@note #x observation : a\n\n\\@note is literal.\n'), `(source_file
   (note_block
     (header_line (id) (category) (title))
-    (separator_line)
+    (body_line)
     (body_line (body_text))))`);
 
 check('error recovery', parse('@note broken ...\n@note #b observation : B\n\nbody of b\n'), `(source_file
+  (ERROR (UNEXPECTED '.'))
   (note_block
-    (header_line (ERROR (UNEXPECTED '.')) (id) (category) (title))
-    (separator_line)
+    (header_line (id) (category) (title))
+    (body_line)
     (body_line (body_text))))`);
 
 if (failures > 0) {

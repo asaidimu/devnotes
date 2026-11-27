@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asaidimu/devnotes/engine/internal/migrate"
 	"github.com/asaidimu/devnotes/engine/internal/model"
 	"github.com/asaidimu/devnotes/engine/internal/pipeline"
 )
@@ -275,8 +276,13 @@ func indexFiles(idx *Index, files []string, diff *Diff) {
 			continue
 		}
 		var ids []string
+		lines := strings.Split(string(src), "\n")
 		for _, loc := range res.NoteLocs {
-			e := toEntry(f, loc.Note)
+			var header string
+			if ln := int(loc.Note.Range.StartLine); ln >= 0 && ln < len(lines) {
+				header = lines[ln]
+			}
+			e := toEntry(f, loc.Note, header)
 			if _, dup := idx.Notes[e.ID]; dup {
 				diff.Warnings = append(diff.Warnings, fmt.Sprintf("duplicate note id %q (%s)", e.ID, f))
 			}
@@ -288,7 +294,7 @@ func indexFiles(idx *Index, files []string, diff *Diff) {
 	}
 }
 
-func toEntry(file string, n model.Note) Entry {
+func toEntry(file string, n model.Note, header string) Entry {
 	e := Entry{
 		ID:       strings.TrimPrefix(n.ID, "#"),
 		Category: n.Category,
@@ -328,8 +334,59 @@ func toEntry(file string, n model.Note) Entry {
 			e.Extensions[d.Name] = ""
 		}
 	}
+	applyLegacyHeader(&e, n, header)
 	e.Hash = contentHash(e)
 	return e
+}
+
+// applyLegacyHeader recovers metadata encoded in a legacy positional header.
+// The parser only understands canonical headers, so without this the index
+// would silently drop status/priority/tags/date/author fields from older notes.
+func applyLegacyHeader(e *Entry, n model.Note, header string) {
+	h, ok := migrate.LegacyHeader(header)
+	if !ok {
+		return
+	}
+	// Error recovery on a legacy header can pick the wrong category/title.
+	// The source line is the record of truth.
+	e.ID = strings.TrimPrefix(h.ID, "#")
+	e.Category = h.Category
+	e.Title = h.Title
+	for _, d := range h.Directives {
+		name, value, _ := strings.Cut(d, " ")
+		switch name {
+		case "@status":
+			if !n.HasStatus {
+				e.Status = value
+			}
+		case "@priority":
+			if !n.HasPri {
+				e.Priority = model.PriorityLabel(value)
+			}
+		case "@tags":
+			if len(n.Tags) == 0 {
+				for _, tag := range strings.Fields(value) {
+					e.Tags = append(e.Tags, strings.TrimPrefix(tag, "#"))
+				}
+			}
+		case "@created", "@timestamp":
+			if !n.HasTs {
+				e.Timestamp = value
+			}
+		case "@assign", "@assignee":
+			if e.Assignee == "" {
+				e.Assignee = value
+			}
+		default:
+			if e.Extensions == nil {
+				e.Extensions = map[string]string{}
+			}
+			key := strings.TrimPrefix(name, "@")
+			if _, exists := e.Extensions[key]; !exists {
+				e.Extensions[key] = value
+			}
+		}
+	}
 }
 
 func statusOrDefault(n model.Note) string {

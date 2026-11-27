@@ -16,7 +16,7 @@ Author directive (SPEC 17)
     (directive_line
       (author_directive
         (author_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Repeated authors (SPEC 17)
@@ -40,7 +40,7 @@ Repeated authors (SPEC 17)
     (directive_line
       (author_directive
         (author_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Author identifiers (SPEC 17)
@@ -64,7 +64,7 @@ Author identifiers (SPEC 17)
     (directive_line
       (author_directive
         (author_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 See directive with note ID (SPEC 18)
@@ -85,7 +85,7 @@ See directive with note ID (SPEC 18)
       (see_directive
         (reference
           (id))))
-    (separator_line)))
+    (body_line)))
 
 ==================
 See directive with URL (SPEC 18)
@@ -106,7 +106,7 @@ See directive with URL (SPEC 18)
       (see_directive
         (reference
           (url))))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Multiple references (SPEC 18/47.5)
@@ -142,7 +142,7 @@ Multiple references (SPEC 18/47.5)
       (see_directive
         (reference
           (id))))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Unknown directives preserved (SPEC 19/47.6)
@@ -186,7 +186,7 @@ Unknown directives preserved (SPEC 19/47.6)
       (extension_directive
         (directive_name)
         (directive_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Extension directive without value (SPEC 26)
@@ -206,7 +206,7 @@ Extension directive without value (SPEC 26)
     (directive_line
       (extension_directive
         (directive_name)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Extension directive names may start with digits (SPEC 26)
@@ -227,7 +227,7 @@ Extension directive names may start with digits (SPEC 26)
       (extension_directive
         (directive_name)
         (directive_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Directives in any order (SPEC 20)
@@ -257,7 +257,7 @@ Directives in any order (SPEC 20)
       (extension_directive
         (directive_name)
         (directive_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 No directives (SPEC 48)
@@ -273,7 +273,7 @@ No directives (SPEC 48)
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Equals-separated directives (compatibility spelling)
@@ -317,6 +317,65 @@ body
       (see_directive
         (reference
           (id))))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))))
+
+==================
+Directives interleaved with body text (separator-free grammar)
+==================
+@note #x issue : Interleaved
+Body first
+@status open
+@priority high
+More body
+@tags #a #b
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (body_line
+      (body_text))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (directive_line
+      (priority_directive
+        (priority_value)))
+    (body_line
+      (body_text))
+    (directive_line
+      (tags_directive
+        (tag_list
+          (tag_name)
+          (tag_name))))
+    (body_line)))
+
+==================
+Body follows directives without a blank separator
+==================
+@note #z issue : No separator
+@status open
+Body immediately
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (directive_line
+      (status_directive
+        (status_value)))
+    (body_line
+      (body_text))
+    (body_line)))

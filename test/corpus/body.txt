@@ -19,7 +19,7 @@ Nested documents require independent ownership.
       (id)
       (category)
       (title))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))
     (body_line)
@@ -49,7 +49,7 @@ Body whitespace preserved (SPEC 23)
       (id)
       (category)
       (title))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))
     (body_line
@@ -72,7 +72,7 @@ Escaped @note in body (SPEC 24)
       (id)
       (category)
       (title))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))
     (body_line)))
@@ -95,7 +95,7 @@ Empty body (SPEC 25)
     (directive_line
       (priority_directive
         (priority_value)))
-    (separator_line)))
+    (body_line)))
 
 ==================
 Bare @note line is body text (SPEC 4.1)
@@ -115,10 +115,11 @@ more text
       (id)
       (category)
       (title))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))
-    (body_line)
+    (body_line
+      (body_at_note))
     (body_line
       (body_text))
     (body_line)))
@@ -141,7 +142,7 @@ body of first note
       (id)
       (category)
       (title))
-    (separator_line)
+    (body_line)
     (body_line
       (body_text))
     (body_line))
@@ -150,7 +151,7 @@ body of first note
       (id)
       (category)
       (title))
-    (separator_line)))
+    (body_line)))
 
 ==================
 @note-heading-like body lines stay in the body (SPEC 4.1)
@@ -173,16 +174,45 @@ see @note here
       (id)
       (category)
       (title))
-    (separator_line)
-    (body_line
-      (body_text))
-    (body_line
-      (body_text))
-    (body_line
-      (body_text))
-    (body_line
-      (body_text))
     (body_line)
+    (body_line
+      (body_at_note))
+    (body_line
+      (body_at_note))
+    (body_line
+      (body_at_note))
+    (body_line
+      (body_at_note))
+    (body_line
+      (body_at_note))
+    (body_line
+      (body_text))
+    (body_line)))
+
+==================
+Indented directive-looking lines and inline @see are body (separator-free grammar)
+==================
+@note #y issue : Indented
+  @status open
+  @see #other
+See @see #ref and @see https://example.com/spec for details.
+\@priority escaped
+
+
+---
+
+(source_file
+  (note_block
+    (header_line
+      (id)
+      (category)
+      (title))
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
+    (body_line
+      (body_text))
     (body_line
       (body_text))
     (body_line)))

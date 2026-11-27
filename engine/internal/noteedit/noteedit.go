@@ -219,8 +219,7 @@ func buildNoteBlock(id string, opts AddOptions, style commentStyle, indent strin
 		lines = append(lines, wrap("@see "+s))
 	}
 	if opts.Body != "" {
-		// The grammar requires a blank separator line between the
-		// directive block and free-text body.
+		// A blank line is only a readability aid, not a grammar requirement.
 		if style.isDN {
 			lines = append(lines, indent)
 		} else {
@@ -420,10 +419,8 @@ func AppendBody(file, id, text string) error {
 	indent := leadingWhitespace(lines[lastContentLine])
 	var newLines []string
 	if !n.HasBody {
-		// Same missing-separator trap as buildNoteBlock: a note with no
-		// existing body has never had its separator_line satisfied, so
-		// body content appended directly after the header/directives
-		// would be silently dropped without this blank line first.
+		// Keep the readability blank line used by buildNoteBlock so appends
+		// match newly created notes. It is not required by the grammar.
 		if style.isDN {
 			newLines = append(newLines, indent)
 		} else {

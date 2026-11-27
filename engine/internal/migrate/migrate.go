@@ -109,37 +109,70 @@ func normalizeEquals(line string) (string, bool) {
 	return line[:idx] + "@" + m[1] + " " + value, true
 }
 
+// Header is the content of a legacy positional header line, already split
+// into its canonical header and directives.
+type Header struct {
+	ID         string
+	Category   string
+	Title      string
+	Directives []string
+}
+
+// LegacyHeader parses a legacy positional header line. It returns false for
+// canonical headers (which have no positional fields) and for escaped
+// "@note" text. Callers that cannot rewrite the source (formatting edits,
+// indexing) use it to recover data the current parser cannot see.
+func LegacyHeader(line string) (Header, bool) {
+	idx := strings.Index(line, "@note")
+	if idx < 0 {
+		return Header{}, false
+	}
+	if idx > 0 && line[idx-1] == '\\' {
+		return Header{}, false
+	}
+	rest := line[idx:]
+
+	loc := titleSepRe.FindStringIndex(rest)
+	if loc == nil {
+		return Header{}, false
+	}
+	head := rest[:loc[0]]
+	parts := strings.Fields(head)
+	if len(parts) < 4 || parts[0] != "@note" {
+		return Header{}, false
+	}
+	directives := fieldDirectives(parts[3:])
+	if len(directives) == 0 {
+		return Header{}, false
+	}
+	return Header{
+		ID:         parts[1],
+		Category:   parts[2],
+		Title:      rest[loc[1]:],
+		Directives: directives,
+	}, true
+}
+
+// HeaderDirectives returns just the directives from a legacy header.
+func HeaderDirectives(line string) ([]string, bool) {
+	h, ok := LegacyHeader(line)
+	return h.Directives, ok
+}
+
 func migrateLine(line string) ([]string, bool) {
 	idx := strings.Index(line, "@note")
 	if idx < 0 {
 		return nil, false
 	}
-	if idx > 0 && line[idx-1] == '\\' {
-		return nil, false
-	}
-	prefix, rest := line[:idx], line[idx:]
-
-	loc := titleSepRe.FindStringIndex(rest)
-	if loc == nil {
-		return nil, false
-	}
-	head, title := rest[:loc[0]], rest[loc[1]:]
-	parts := strings.Fields(head)
-	if len(parts) < 3 || parts[0] != "@note" {
-		return nil, false
-	}
-	id, category, fields := parts[1], parts[2], parts[3:]
-	if len(fields) == 0 {
-		return nil, false
-	}
-	directives := fieldDirectives(fields)
-	if len(directives) == 0 {
+	prefix := line[:idx]
+	h, ok := LegacyHeader(line)
+	if !ok {
 		return nil, false
 	}
 
-	out := make([]string, 0, 1+len(directives))
-	out = append(out, prefix+"@note "+id+" "+category+" : "+title)
-	for _, d := range directives {
+	out := make([]string, 0, 1+len(h.Directives))
+	out = append(out, prefix+"@note "+h.ID+" "+h.Category+" : "+h.Title)
+	for _, d := range h.Directives {
 		out = append(out, prefix+d)
 	}
 	return out, true

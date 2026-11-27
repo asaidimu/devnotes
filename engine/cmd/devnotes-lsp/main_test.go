@@ -600,6 +600,13 @@ func TestCompletionSnippetsAndBodyExclusion(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("completion must not fire in body: %v", labels(items))
 	}
+	// A directive after body text is still a directive for completion.
+	openDoc(t, s, "file:///ws/interleaved.dn", "@note #i todo : T\nbody\n@status \n")
+	items = completionResult(t, s, "file:///ws/interleaved.dn", 2, 8)
+	if !contains(labels(items), "open") {
+		t.Fatalf("completion must work on a directive after body text: %v", labels(items))
+	}
+
 	// Host file without notes: no snippets unless enabled.
 	openDoc(t, s, "file:///ws/plain.go", "package main\n\nfunc main() {}\n")
 	items = completionResult(t, s, "file:///ws/plain.go", 0, 0)
@@ -687,6 +694,15 @@ func TestHoverRendersNoteAndReference(t *testing.T) {
 	content = h["contents"].(map[string]any)["value"].(string)
 	if !strings.Contains(content, "unresolved reference") {
 		t.Fatalf("unresolved hover: %q", content)
+	}
+
+	// Inline @see in a body line is a reference too.
+	inlineSrc := "@note #a issue : A\nBody @see #b here\n\n@note #b todo : B\n\n"
+	openDoc(t, s, testURI, inlineSrc)
+	h = hoverReq(1, 10)
+	content = h["contents"].(map[string]any)["value"].(string)
+	if !strings.Contains(content, "B") {
+		t.Fatalf("inline reference hover should render target: %q", content)
 	}
 }
 
@@ -852,6 +868,25 @@ func TestReferenceJumpCodeAction(t *testing.T) {
 	if arg["uri"] != testURI {
 		t.Fatalf("jump target uri: %+v", arg["uri"])
 	}
+
+	// The same nested jump command is offered for an inline @see reference.
+	inlineSrc := "@note #a issue : A\nBody @see #b here\n\n@note #b todo : B\n\n"
+	openDoc(t, s, testURI, inlineSrc)
+	acts = codeActions(t, s, testURI, 1, 10, []string{"refactor.rewrite.devnotes"})
+	jump = nil
+	for _, a := range acts {
+		cmd, _ := a["command"].(map[string]any)
+		if cmd != nil && cmd["command"] == "devnotes.jumpToNote" {
+			jump = cmd
+			break
+		}
+	}
+	if jump == nil {
+		t.Fatalf("no jump action for inline @see in %+v", acts)
+	}
+	if title, _ := jump["title"].(string); !strings.Contains(title, "#b") {
+		t.Fatalf("inline jump title: %q", title)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -961,6 +996,18 @@ func TestStatusAndPriorityActions(t *testing.T) {
 	if !strings.Contains(got, "@priority medium") {
 		t.Fatalf("priority insert: %q", got)
 	}
+
+	// A new directive is inserted after the last directive even when body
+	// lines precede it.
+	src3 := "@note #z observation : Interleaved\nbody\n@priority high\n"
+	openDoc(t, s, testURI, src3)
+	acts = codeActions(t, s, testURI, 0, 8, nil)
+	a = actionByTitle(t, acts, "Mark as wontfix (currently: open)")
+	edits = decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
+	got = applyEditsLSP(t, src3, edits)
+	if !strings.Contains(got, "body\n@priority high\n@status wontfix") {
+		t.Fatalf("interleaved status insert: %q", got)
+	}
 }
 
 func actionByTitleNoErr(acts []map[string]any, substr string) bool {
@@ -1017,6 +1064,51 @@ func TestFormatNoteAction(t *testing.T) {
 	}
 }
 
+func TestFormatPreservesLegacyHeaderMetadata(t *testing.T) {
+	s, _ := newTestServer(t)
+	src := "@note #legacy issue resolved P1 #tag1,#tag2 2026-01-02 owner : Legacy title\n" +
+		"@see #target\n\nbody line\n"
+	openDoc(t, s, testURI, src)
+	acts := codeActions(t, s, testURI, 0, 0, nil)
+	a := actionByTitle(t, acts, "Format note")
+	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
+	got := applyEditsLSP(t, src, edits)
+	want := "@note #legacy issue : Legacy title\n" +
+		"@status resolved\n" +
+		"@priority high\n" +
+		"@tags #tag1 #tag2\n" +
+		"@created 2026-01-02\n" +
+		"@owner\n" +
+		"@see #target\n" +
+		"\nbody line\n"
+	if got != want {
+		t.Fatalf("legacy header formatted without losing metadata:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestFormatHoistsInterleavedDirectives(t *testing.T) {
+	s, _ := newTestServer(t)
+	src := "@note #x issue : Interleaved\n" +
+		"Body mentions @see #target\n" +
+		"@priority high\n" +
+		"@status open\n"
+	openDoc(t, s, testURI, src)
+	acts := codeActions(t, s, testURI, 0, 0, nil)
+	a := actionByTitle(t, acts, "Format note")
+	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[testURI]))
+	got := applyEditsLSP(t, src, edits)
+	want := "@note #x issue : Interleaved\n" +
+		"@status open\n" +
+		"@priority high\n" +
+		"Body mentions @see #target\n"
+	if got != want {
+		t.Fatalf("interleaved directives not canonicalized:\ngot:  %q\nwant: %q", got, want)
+	}
+	if strings.Count(got, "@see") != 1 {
+		t.Fatalf("inline @see must stay in body exactly once: %q", got)
+	}
+}
+
 func TestFormatEqualsDirectives(t *testing.T) {
 	s, _ := newTestServer(t)
 	src := "@note #x issue : Equals form\n@status=open\n@priority=critical\n@tags=#a,#b\n\nbody\n"
@@ -1029,6 +1121,28 @@ func TestFormatEqualsDirectives(t *testing.T) {
 		t.Fatalf("equals directives must be canonicalized, not dropped: %q", got)
 	}
 }
+func TestFormatLegacyHeaderInsideGoCommentPreservesPrefix(t *testing.T) {
+	s, _ := newTestServer(t)
+	uri := "file:///ws/legacy.go"
+	src := "package a\n\n// @note #legacy issue P1 #tag 2026-01-02 owner : Legacy\n//\n// body line\nfunc A() {}\n"
+	openDoc(t, s, uri, src)
+	acts := codeActions(t, s, uri, 2, 5, nil)
+	a := actionByTitle(t, acts, "Format note")
+	edits := decodeEdits(t, mustJSON(t, a["edit"].(map[string]any)["changes"].(map[string]any)[uri]))
+	got := applyEditsLSP(t, src, edits)
+	want := "package a\n\n" +
+		"// @note #legacy issue : Legacy\n" +
+		"// @priority high\n" +
+		"// @tags #tag\n" +
+		"// @created 2026-01-02\n" +
+		"// @owner\n" +
+		"//\n" +
+		"// body line\nfunc A() {}\n"
+	if got != want {
+		t.Fatalf("legacy comment header format lost data or prefixes:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 func TestFormatInsideGoCommentPreservesPrefix(t *testing.T) {
 	s, _ := newTestServer(t)
 	src := "package a\n\n// @note #x issue : Messy\n// @priority high\n// @status open\n// @author jane\n//\n// body line\nfunc A() {}\n"

@@ -1,6 +1,6 @@
 ---
 name: devnotes
-description: Use the devnotes CLI to read, query, and manage DevNotes — structured @note comments embedded directly in source code (todos, issues, observations, decisions). Trigger this whenever the user's repo contains @note comments or a .devnotes/index.json file, when they ask to find/list/triage todos or issues "in the code" rather than in a separate tracker, when they ask you to leave a note/flag a bug/mark something resolved/assign a note while reading or writing code, or when they mention devnotes, note IDs (#some-id), or want a project-management view (backlog, report, who's assigned what) derived from source comments. Also trigger when writing a @note comment by hand (not via the CLI), since the grammar has a silent-data-loss trap (missing blank separator before body text) that's easy to hit without knowing it's there. Always check for a devnotes binary and a .devnotes/index.json before falling back to grep for @note comments by hand.
+description: Use the devnotes CLI to read, query, and manage DevNotes — structured @note comments embedded directly in source code (todos, issues, observations, decisions). Trigger this whenever the user's repo contains @note comments or a .devnotes/index.json file, when they ask to find/list/triage todos or issues "in the code" rather than in a separate tracker, when they ask you to leave a note/flag a bug/mark something resolved/assign a note while reading or writing code, or when they mention devnotes, note IDs (#some-id), or want a project-management view (backlog, report, who's assigned what) derived from source comments. Also trigger when writing a @note comment by hand (not via the CLI), since directive lines must start at column 0 and inline @see targets have strict boundaries. Always check for a devnotes binary and a .devnotes/index.json before falling back to grep for @note comments by hand.
 ---
 
 # devnotes
@@ -31,17 +31,26 @@ does not touch the source comment, so the two will diverge.
 
 ## Notes grammar
 
-A note is a comment block with this exact shape, in this exact order:
+A note is a comment block with a header, then any mix of directive lines and
+body lines:
 
 ```
 header_line
-directive_line*      (@author, @see, or a custom @name — zero or more)
-separator_line        <- one blank comment line, MANDATORY if body follows
-body_line*            (free text, zero or more lines)
+(directive_line / body_line)*
 ```
 
-Read every part of that before writing or generating a note by hand — the
-separator line in particular is a real trap, covered below.
+- `directive_line` starts at column 0 (after any host-comment prefix is
+  stripped): `@status`, `@priority`, `@tags`, `@created`, `@author`, `@see`,
+  or a custom `@name`.
+- `body_line` is everything else. An indented `  @status open` is body text,
+  not a directive.
+- There is no mandatory blank separator. A blank line is ordinary body text;
+  formatters may insert one for readability.
+- A column-0 header such as `@note #id category : Title` always starts a new
+  note. To write literal directive-looking text at column 0, escape the `@`
+  (`\@note`, `\@status open`).
+- `@see` is the one directive-like form allowed inline in note text (title or
+  body).
 
 ### Header line
 
@@ -64,8 +73,9 @@ separator line in particular is a real trap, covered below.
   `MISSING_TITLE` error.
 
 The header carries identity and category only. Status, priority, timestamps,
-tags, authors, and references are **directive lines immediately after the
-header**, one value per line:
+tags, authors, and references are **column-0 directive lines**, one value per
+line. They may appear anywhere after the header, even between or after body
+lines:
 
 ```
 @status open                    # open | resolved | wontfix | deprecated
@@ -89,7 +99,7 @@ header**, one value per line:
   `@tags=#a,#b`). That parses and is normalized to the canonical form; do not
   rewrite those lines by hand.
 
-### Directive lines — and the ordering rule that silently reclassifies text
+### Directive lines and inline `@see`
 
 ```
 @see #other-id        (or a bare URL)
@@ -97,16 +107,20 @@ header**, one value per line:
 @name value            (custom directive — preserved, flagged UNKNOWN_DIRECTIVE at info level)
 ```
 
-**Directives are only recognized in the block right after the header, before
-any body text.** Once a body line has appeared, a later `@see`, `@author`, or
-`@status` line is *not* parsed as a directive — it's just body text starting
-with `@`. This isn't a bug, it's the grammar (`note_block` is `header_line,
-directive_line*, separator_line, body_line*` — directives can't appear after
-the separator). Practical effect: if `devnotes trace <id>` isn't finding a
-reference you can plainly see in the comment, check whether the `@see` line
-comes before or after the free-text body. `devnotes check` does **not** flag
-this — a misplaced directive is still grammatically valid body text, so
-nothing looks wrong to the validator.
+A directive is recognized only when `@name` is the first character of a
+normalized line. Indented lines are body text. A column-0 `@see` line consumes
+the rest of the line as its target; in a title or prose, `@see` is recognized
+only with a strict single target:
+
+```
+See @see #other-id and @see https://example.com/design for context.
+See @see "design doc, revision 2" for the quoted form.
+```
+
+Inline targets must be a `#id`, a `scheme:...` URL token, or a double-quoted
+value. Sentence punctuation after the target is not part of it. An escaped
+`\@see #id` is literal body text. `devnotes trace <id>` follows both directive
+and inline `@see #id` references.
 
 ### Diagnostics (`devnotes check`)
 
@@ -122,8 +136,10 @@ nothing looks wrong to the validator.
 | `INVALID_PRIORITY` | error | `@priority` value isn't a canonical word or `P0`–`P3` alias |
 | `UNKNOWN_DIRECTIVE` | info | a custom `@name value` directive (e.g. `@assignee`) — expected and harmless, just informational |
 
-Note what's *not* in this table: there is no code for a misplaced directive
-or a missing separator line. Both are silent as far as `check` is concerned.
+Note what's *not* in this table: there is no code for an indented
+directive-looking line. It is ordinary body text, so `check` stays silent. A
+column-0 `@name` with an unsupported name is reported as `UNKNOWN_DIRECTIVE`
+(info), not an error.
 
 ## Setup
 
@@ -156,10 +172,9 @@ devnotes report --by=priority                   # counts, for a PM-style overvie
 ```
 
 `trace` only follows references shaped `@see #id` — bare-URL `@see` targets
-have nothing to walk to, so they're skipped in the graph. And remember: a
-`@see` written after body text isn't a reference at all (see Grammar above),
-so `trace` won't find it either — that's correct behavior given what was
-actually parsed, not a bug in `trace`.
+have nothing to walk to, so they're skipped in the graph. Inline `@see #id`
+references in body text are indexed too; indented `@see #id` lines are body
+text but the inline form still applies, so they are followed as references.
 
 Prefer `list`/`report` over re-grepping the codebase for `@note`: the index
 is already built, filtering is instant, and you get structured fields
@@ -178,8 +193,8 @@ devnotes note add <file> --category=todo --title="..." \
 - Category and title are the only required flags.
 - If you don't pass `--id`, one is generated from the title
   (`fix-pool-leak-a1b2`).
-- The blank separator line (see Grammar above) is inserted automatically
-  when `--body` is given — you don't need to think about it here.
+- A blank line may be inserted before `--body` for readability; it is not
+  syntactically required.
 
 ```
 devnotes note claim <id> --assignee=name       # writes @assignee into source

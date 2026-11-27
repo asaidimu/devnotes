@@ -1,5 +1,12 @@
 const PREC = {
   keyword: 1,
+  // Directives are recognized only at the start of a normalized note line.
+  // They must outrank body_text, which may begin with '@' for inline @see
+  // references and escaped directive-looking text.
+  directive: 3,
+  // "@notebook" and a bare "@note" are body text, not directives/headers.
+  bodyNote: 5,
+  header: 6,
 };
 
 export default grammar({
@@ -8,13 +15,6 @@ export default grammar({
   // No automatic whitespace skipping – we handle spaces and newlines
   // explicitly so that body whitespace is preserved byte-for-byte.
   extras: $ => [],
-
-  // A bare "@note" body line can either continue the current note's body or
-  // begin a new note; the header interpretation fails for a bare "@note" (no
-  // whitespace + id follows), so the body interpretation always wins.
-  conflicts: $ => [
-    [$.note_block],
-  ],
 
   rules: {
     // ------------------------------------------------------------------
@@ -25,11 +25,12 @@ export default grammar({
     // ------------------------------------------------------------------
     // NOTE
     // ------------------------------------------------------------------
+    // There is no separator: directives may appear anywhere at the beginning
+    // of a line, including after body text. Blank lines are ordinary body
+    // lines; the formatter may still emit one for readability.
     note_block: $ => seq(
       $.header_line,
-      repeat($.directive_line),
-      $.separator_line,
-      repeat($.body_line)
+      repeat(choice($.directive_line, $.body_line))
     ),
 
     // ------------------------------------------------------------------
@@ -38,8 +39,7 @@ export default grammar({
     // Header carries only identity, category and title. All metadata lives
     // in directives so values never need positional disambiguation.
     header_line: $ => seq(
-      '@note',
-      $._ws,
+      token(prec(PREC.header, /@note[ \t]+/)),
       $.id,
       $._ws,
       $.category,
@@ -80,7 +80,7 @@ export default grammar({
     // reports INVALID_STATUS / INVALID_PRIORITY / INVALID_TIMESTAMP instead
     // of the grammar silently reinterpreting a bad value as an extension.
     status_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       token(prec(PREC.keyword, 'status')),
       $._dsep,
       $.status_value,
@@ -89,7 +89,7 @@ export default grammar({
     status_value: $ => token(/[^\r\n \t]+/),
 
     priority_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       token(prec(PREC.keyword, 'priority')),
       $._dsep,
       $.priority_value,
@@ -98,7 +98,7 @@ export default grammar({
     priority_value: $ => token(/[^\r\n \t]+/),
 
     tags_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       token(prec(PREC.keyword, 'tags')),
       $._dsep,
       $.tag_list,
@@ -106,7 +106,7 @@ export default grammar({
     ),
 
     created_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       token(prec(PREC.keyword, choice('created', 'timestamp'))),
       $._dsep,
       $.timestamp_value,
@@ -115,7 +115,7 @@ export default grammar({
     timestamp_value: $ => token(/[^\r\n \t]+/),
 
     author_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       token(prec(PREC.keyword, 'author')),
       $._dsep,
       $.author_value,
@@ -124,7 +124,7 @@ export default grammar({
     author_value: $ => token(/[^\r\n]+/),
 
     see_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       token(prec(PREC.keyword, 'see')),
       $._dsep,
       $.reference,
@@ -139,7 +139,7 @@ export default grammar({
     reference_value: $ => token(/[^\r\n]+/),
 
     extension_directive: $ => seq(
-      '@',
+      token(prec(PREC.directive, '@')),
       $.directive_name,
       optional(seq($._dsep, $.directive_value)),
       $._newline
@@ -148,27 +148,25 @@ export default grammar({
     directive_value: $ => token(/[^\r\n]+/),
 
     // ------------------------------------------------------------------
-    // SEPARATOR (the single blank line that terminates metadata)
-    // ------------------------------------------------------------------
-    separator_line: $ => seq(optional($._ws), $._newline),
-
-    // ------------------------------------------------------------------
     // BODY
     // ------------------------------------------------------------------
     body_line: $ => choice(
-      seq($.body_text, $._newline),
-      seq(token('@note'), $._newline), // bare '@note' line (no header continues)
+      seq(choice($.body_text, $.body_at_note), $._newline),
       $._newline
     ),
 
-    // A body line is anything that does not start with "@note" followed by
-    // whitespace. Lines starting with "@note " begin a new note (SPEC 4.2).
-    // Higher token precedence so body text wins over the "@note" header
-    // literal; a real header never matches these alternatives.
-    body_text: $ => token(prec(2, choice(
+    // "@note" followed by whitespace is always a header. Other "@note..."
+    // spellings stay body text even though they start at column 0.
+    body_at_note: $ => token(prec(PREC.bodyNote, /@note(?:[^ \t\r\n][^\r\n]*)?/)),
+
+    // Body text may contain '@' (inline @see, escaped directives) but a
+    // directive at column 0 wins via PREC.directive. Indented '@name' lines
+    // are body because this token starts at the line's first character.
+    body_text: $ => token(prec(1, choice(
       /[^@\r\n][^\r\n]*/,                                    // not starting with '@'
       /@(?:[^n\r\n]|n[^o\r\n]|no[^t\r\n]|not[^e\r\n]|note[^ \t\r\n])[^\r\n]*/, // '@' but not a '@note ' header
-      /[\t ]+/                                               // whitespace-only line
+      /[\t ]+/,                                              // whitespace-only line
+      /@[^\r\n]*/                                            // fallback for other '@' lines
     ))),
 
     // ------------------------------------------------------------------

@@ -19,9 +19,9 @@ func hasCode(ds []validate.WSDiag, code string) bool {
 func TestEnsureTerminator(t *testing.T) {
 	cases := map[string]string{
 		"@note #a observation : T\n\n":         "@note #a observation : T\n\n",
-		"@note #a observation : T\n":           "@note #a observation : T\n\n",
-		"@note #a observation : T":             "@note #a observation : T\n\n",
-		"@note #a observation : T\n\nbody\n":   "@note #a observation : T\n\nbody\n\n",
+		"@note #a observation : T\n":           "@note #a observation : T\n",
+		"@note #a observation : T":             "@note #a observation : T\n",
+		"@note #a observation : T\n\nbody\n":   "@note #a observation : T\n\nbody\n",
 		"@note #a observation : T\n\nbody\n\n": "@note #a observation : T\n\nbody\n\n",
 	}
 	for in, want := range cases {

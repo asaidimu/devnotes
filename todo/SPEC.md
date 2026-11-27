@@ -36,9 +36,11 @@ The language is designed around four principles:
 A DevNote consists of:
 
 1. a header;
-2. zero or more metadata directives;
-3. a separator;
-4. a Markdown body.
+2. zero or more metadata directives at the start of a line;
+3. a Markdown body.
+
+There is no mandatory separator. A blank line is ordinary body text that
+formatters MAY insert for readability.
 
 Conceptually:
 
@@ -49,15 +51,15 @@ DevNote
 │   ├── ID
 │   ├── Category
 │   └── Title
-├── Metadata Directives
+├── Metadata Directives (at the start of a line, anywhere in the note)
 │   ├── @status
 │   ├── @priority
 │   ├── @tags
 │   ├── @created
 │   ├── @author
 │   └── @see
-├── Separator
 └── Body
+    └── inline @see references (the one directive-like form allowed in prose)
 ```
 
 A DevNote has a stable logical identity (`id`) and a physical source location.
@@ -233,17 +235,22 @@ A DevNote consists of a contiguous sequence of normalized comment lines belongin
 For line comments:
 
 * the note begins at a line containing a valid `@note` header;
-* metadata directives immediately following the header belong to that note;
-* the separator marks the beginning of the body;
+* a directive is recognized only when `@name` starts a normalized line (column 0);
+* directives may appear before, between, or after body lines and belong to that note;
+* an indented line such as `  @status open` is body text;
+* `@see` may also appear inline in note text, subject to the target rules in section 18;
 * body lines continue while they remain part of the same contiguous comment region;
-* a new `@note` header after the separator starts a new note.
+* a new column-0 `@note <id> <category> : <title>` header starts a new note.
 
-Therefore, an `@note` appearing in a body is **not body text**. It begins a new note.
+Therefore, a column-0 `@note` header appearing in prose is **not body text**. It
+begins a new note. A bare `@note` or a word such as `@notebook` is body text.
 
-To include the literal text `@note` in a body, implementations SHOULD support escaping:
+To include literal directive-looking text at column 0, implementations SHOULD
+support escaping the `@`:
 
 ```text
 \@note
+\@status open
 ```
 
 The escape is removed when interpreting the body.
@@ -264,11 +271,11 @@ For block comments:
 
 the complete block is available to the DevNotes parser.
 
-A second `@note` occurring after a separator begins a new DevNote only if the host adapter exposes the block as multiple logical comment regions.
+A second column-0 `@note` header begins a new DevNote even inside the same
+block comment; the host adapter exposes the interior lines as normalized text.
 
-Otherwise, a block comment is treated as one host comment and may contain only one DevNote.
-
-Implementations SHOULD warn when multiple DevNote headers occur inside a single block comment.
+Implementations MAY warn when multiple DevNote headers occur inside a single
+block comment because their physical source locations share one comment region.
 
 ---
 
@@ -359,9 +366,11 @@ The canonical DevNote syntax is:
 @note <id> <category> : <title>
 @<directive> <value>
 @<directive> <value>
-
 <body>
 ```
+
+A blank line between the directives and the body is optional and exists only
+for readability. Formatters MAY insert one.
 
 Example:
 
@@ -376,6 +385,15 @@ Example:
 //
 // The current design ties Document.Release() to a single pool.
 // Nested sub-documents need their own pools.
+```
+
+Directives may also appear after body text, still at column 0:
+
+```text
+@note #x issue : Interleaved metadata
+Body text first.
+@status open
+More body text.
 ```
 
 # 7. Header
@@ -533,8 +551,9 @@ Core metadata directives are:
 | `@tags`     | one or more `#tag` identifiers                |       no | empty   |
 | `@created`  | ISO 8601 timestamp                            |       no | none    |
 
-Directives appear one per line, immediately after the header and before the
-separator. Their order is not significant.
+Directives appear one per line and start at column 0. They may occur anywhere
+in the note, including after body text. Their order is not significant. An
+indented directive-looking line is body text.
 
 Example:
 
@@ -737,7 +756,8 @@ Titles MUST NOT contain newlines.
 
 # 16. Metadata Directives
 
-Metadata directives occur after the header and before the body separator.
+Metadata directives start at column 0 and may occur anywhere after the header,
+including between or after body lines.
 
 Core directives:
 
@@ -789,22 +809,43 @@ Version-control metadata SHOULD be used for modification history.
 
 # 18. References
 
-Syntax:
+A `@see` directive starts at column 0:
 
 ```text
 @see <reference>
 ```
 
+It may also appear inline anywhere in note text, including titles and body
+lines:
+
+```text
+See @see #document-lifecycle for the earlier decision.
+```
+
 A reference may be:
 
 1. another DevNote ID;
-2. an absolute URL.
+2. an absolute URL;
+3. a quoted value (inline form only).
+
+Inline references have strict boundaries. The target MUST be exactly one of:
+
+```text
+#id
+scheme:rest-of-token
+"quoted value with spaces"
+```
+
+When `@see` starts a line, the directive form may instead consume the rest of
+the line as an unquoted value. In prose, sentence punctuation such as `.`, `,`,
+`)` is not part of the target.
 
 Examples:
 
 ```text
 @see #document-lifecycle
 @see https://github.com/example/project/issues/42
+See @see #pool-ownership and @see "design doc, revision 2" below.
 ```
 
 Multiple references are permitted:
@@ -864,12 +905,9 @@ Example:
 
 is valid.
 
-The separator terminates metadata:
-
-```text
-```
-
-After the separator, all content is body content.
+There is no syntactic separator. A blank line is body content that formatters
+MAY use as visual separation. Column-0 directive lines remain metadata even
+after body text; inline `@see` remains part of the body.
 
 ---
 
@@ -921,7 +959,8 @@ These diagnostics SHOULD identify the exact source range.
 
 The body is Markdown text.
 
-The body begins after the metadata separator.
+The body is every non-directive line after the header. It may begin directly
+after the header or after directives; a blank line may be used for readability.
 
 Example:
 
@@ -974,29 +1013,34 @@ This allows Markdown constructs and embedded code examples to retain their inten
 
 ---
 
-# 24. Literal `@note` in Bodies
+# 24. Literal Directive-Looking Text in Bodies
 
-Because `@note` is structurally significant, literal occurrences SHOULD be escaped:
+Because any column-0 `@name` is structurally significant, literal occurrences
+at the start of a line SHOULD be escaped:
 
 ```text
 \@note
+\@status open
 ```
 
 The parser interprets:
 
 ```text
-\@note
+\@status open
 ```
 
 as:
 
 ```text
-@note
+@status open
 ```
 
-in the semantic body.
+in the semantic body. The escape applies to every directive name, not only
+`@note`. Indented lines such as `  @status open` need no escape because they
+are already body text.
 
-An implementation MAY provide additional escaping rules, but the core language defines only this escape.
+An implementation MAY provide additional escaping rules, but the core
+language defines only this `\@` escape.
 
 ---
 
@@ -1009,12 +1053,12 @@ Example:
 ```text
 // @note #remove-api todo : Remove deprecated API
 // @priority high
-//
 ```
 
-The body is the empty string.
+The body is the empty string. A trailing blank comment line is optional and
+does not change the body.
 
-A note is therefore valid without descriptive text after the separator.
+A note is therefore valid without descriptive text.
 
 ---
 
@@ -1023,7 +1067,10 @@ A note is therefore valid without descriptive text after the separator.
 The following grammar defines the core syntax after host-comment normalization.
 
 ```abnf
-note-block      = header-line *(directive-line) separator-line *body-line
+note-block      = header-line *(directive-line / body-line)
+
+; A directive-line starts at column 0. Indented "@name" text is body-text.
+; Inline @see is recognized inside body-text; see section 18 for targets.
 
 header-line     = "@note" WS id WS category WS ":" WS title
 
@@ -1043,9 +1090,12 @@ author-line     = "@author" WS value
 see-line        = "@see" WS reference
 extension-line  = "@" directive-name [WS value]
 
-separator-line  = WS?
+body-line       = body-text / blank-line
 
-body-line       = body-text
+blank-line      = [WS]
+
+inline-see      = "@see" WS (id / url / quoted-value)
+quoted-value    = DQUOTE *body-char DQUOTE
 
 id              = "#" 1*(ALPHA / DIGIT / "-" / "_")
 
@@ -1112,11 +1162,14 @@ the parser performs the following steps:
 3. Parse the category.
 4. Locate the first exact ` : ` delimiter.
 5. Parse the title as the remainder after the delimiter.
-6. Read each following directive line until the separator.
+6. Read every column-0 `@name` line in the note as a directive, regardless of
+   whether body lines have already appeared.
 7. Validate directive values by kind (`@status`, `@priority`, `@tags`,
    `@created`, `@author`, `@see`, or an extension).
 8. Reject duplicate core directives.
 9. Preserve unknown directives as extension metadata.
+10. Treat indented directive-looking lines as body text and collect strict
+    inline `@see` references from body text.
 
 This eliminates the ambiguity present in shape-based detection. A malformed
 core value is reported, not reinterpreted as an extension directive.
@@ -1137,9 +1190,12 @@ Recommended order:
 @created <timestamp>      (if present)
 @author ...
 @see ...
-
 <body>
 ```
+
+Formatters hoist column-0 directives into that block after the header, preserve
+body lines and inline `@see` references in place, and MAY insert a blank line
+before the body for readability.
 
 Canonical priority values are the words `critical`, `high`, `medium`, and
 `low`. Legacy `P0`–`P3` values are normalized on rewrite.
@@ -1326,7 +1382,12 @@ devnotes migrate
 ```
 
 The migrator preserves comment prefixes and converts positional fields into
-`@status`, `@priority`, `@tags`, and `@created` directives.
+`@status`, `@priority`, `@tags`, and `@created` directives. Formatting and
+indexing MAY recover the same legacy fields without rewriting the source, but
+the parser MUST NOT accept positional metadata as valid syntax.
+
+This revision also removed the mandatory blank separator. A note without a
+separator is valid; a blank line is only a readability aid.
 
 Legacy `P0`–`P3` values remain valid only as `@priority` values. Tag lists
 accept either spaces or commas.
@@ -1942,9 +2003,12 @@ The canonical form is:
 @created <timestamp>
 @author <identifier>
 @see <reference>
-
 <body>
 ```
+
+A blank line before `<body>` is optional. Directives start at column 0 and may
+appear anywhere in the note; indented directive-looking lines are body text and
+inline `@see` references are allowed in prose.
 
 with:
 
