@@ -1,3 +1,10 @@
+## [0.4.1](https://github.com/asaidimu/devnotes/compare/v0.4.0...v0.4.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **grammar:** remove mandatory metadata separator and support interleaved directives ([0299e8d](https://github.com/asaidimu/devnotes/commit/0299e8d89beb825f3ad19453682c1f2f0f44596d))
+
 # [0.4.0](https://github.com/asaidimu/devnotes/compare/v0.3.0...v0.4.0) (2026-11-12)
 
 
